@@ -6,6 +6,7 @@ import {
   clearNeisCaches,
   extractNeisRows,
   parseLessons,
+  parseSchoolClasses,
   parseSchools,
   timetableDataset,
   searchSchools,
@@ -143,7 +144,7 @@ describe("NEIS parsing", () => {
       ]),
     ).toEqual([
       { period: 1, subject: "자료구조" },
-      { period: 3, subject: "음악 또는 체육 (선택·이동 수업 가능)" },
+      { period: 3, subject: "음악 또는 체육", ambiguous: true },
     ]);
   });
 
@@ -156,7 +157,24 @@ describe("NEIS parsing", () => {
     );
     expect(lessons[0]?.subject.length).toBeLessThanOrEqual(100);
     expect(lessons[0]?.subject).toContain("외");
-    expect(lessons[0]?.subject).toContain("선택·이동 수업 가능");
+    expect(lessons[0]?.ambiguous).toBe(true);
+  });
+
+  it("parses and separates same-number classes by vocational department", () => {
+    const classes = parseSchoolClasses({
+      classInfo: [
+        { head: [{ RESULT: { CODE: "INFO-000", MESSAGE: "정상" } }] },
+        { row: [
+          { GRADE: "2", CLASS_NM: "1", DDDEP_NM: "클라우드보안과" },
+          { GRADE: "2", CLASS_NM: "1", DDDEP_NM: "메타버스게임과" },
+          { GRADE: "2", CLASS_NM: "1", DDDEP_NM: "클라우드보안과" },
+        ] },
+      ],
+    });
+    expect(classes).toEqual([
+      { grade: 2, className: "1", department: "메타버스게임과" },
+      { grade: 2, className: "1", department: "클라우드보안과" },
+    ]);
   });
 });
 
@@ -208,6 +226,30 @@ describe("NeisClient", () => {
     expect(url.searchParams.get("ALL_TI_YMD")).toBe("20260922");
     expect(url.searchParams.get("GRADE")).toBe("2");
     expect(url.searchParams.get("CLASS_NM")).toBe("1");
+  });
+
+  it("passes the selected vocational department to classInfo and hisTimetable", async () => {
+    const requested: URL[] = [];
+    const fetchImplementation: typeof fetch = vi.fn(async (input) => {
+      const url = new URL(String(input));
+      requested.push(url);
+      if (url.pathname.endsWith("/classInfo")) {
+        return new Response(JSON.stringify({ RESULT: { CODE: "INFO-200", MESSAGE: "없음" } }));
+      }
+      return new Response(JSON.stringify({
+        hisTimetable: [
+          { head: [{ RESULT: { CODE: "INFO-000", MESSAGE: "정상" } }] },
+          { row: [{ SCHUL_NM: "한세사이버보안고등학교", DDDEP_NM: "클라우드보안과", PERIO: "1", ITRT_CNTNT: "자료구조" }] },
+        ],
+      }));
+    });
+    const client = new NeisClient({ apiKey: "secret-key", fetchImplementation, maxAttempts: 1 });
+    await client.getSchoolClasses("B10", "7010911", 2026);
+    await client.getTodayTimetable({ ...query, department: "클라우드보안과" }, "2026-09-22");
+
+    expect(requested[0]?.pathname).toBe("/hub/classInfo");
+    expect(requested[0]?.searchParams.get("AY")).toBe("2026");
+    expect(requested[1]?.searchParams.get("DDDEP_NM")).toBe("클라우드보안과");
   });
 
   it("retries a transient failure only up to the configured limit", async () => {

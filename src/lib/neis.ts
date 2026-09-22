@@ -1,7 +1,7 @@
 import { MemoryCache } from "@/lib/cache";
 import type { EducationOfficeCode } from "@/lib/education-offices";
 import { AppError } from "@/lib/errors";
-import type { Lesson, School, SchoolKind, TimetableResponse } from "@/lib/types";
+import type { Lesson, School, SchoolClass, SchoolKind, TimetableResponse } from "@/lib/types";
 import type { TimetableQuery } from "@/lib/schemas";
 
 export const NEIS_BASE_URL = "https://open.neis.go.kr/hub";
@@ -67,6 +67,7 @@ const MOCK_LESSONS: readonly Lesson[] = [
 ] as const;
 
 const schoolCache = new MemoryCache<School[]>(200);
+const classCache = new MemoryCache<SchoolClass[]>(300);
 const timetableCache = new MemoryCache<TimetableResponse>(500);
 const MAX_RESPONSE_BYTES = 2_000_000;
 
@@ -191,6 +192,33 @@ export function parseSchools(payload: unknown): School[] {
   );
 }
 
+export function parseSchoolClasses(payload: unknown): SchoolClass[] {
+  const unique = new Map<string, SchoolClass>();
+  for (const row of extractNeisRows(payload, "classInfo")) {
+    const gradeText = stringField(row, "GRADE");
+    const className = stringField(row, "CLASS_NM");
+    const rawDepartment = stringField(row, "DDDEP_NM");
+    const department = rawDepartment.length <= 100 && !/[\u0000-\u001f\u007f]/.test(rawDepartment)
+      ? rawDepartment
+      : "";
+    if (!/^\d$/.test(gradeText) || !className || className.length > 20) continue;
+    const grade = Number(gradeText);
+    if (grade < 1 || grade > 6 || /[\u0000-\u001f\u007f]/.test(className)) continue;
+    const schoolClass: SchoolClass = {
+      grade,
+      className,
+      ...(department ? { department } : {}),
+    };
+    unique.set(`${department}:${grade}:${className}`, schoolClass);
+  }
+  return [...unique.values()].sort(
+    (left, right) =>
+      (left.department ?? "").localeCompare(right.department ?? "", "ko-KR") ||
+      left.grade - right.grade ||
+      left.className.localeCompare(right.className, "ko-KR", { numeric: true }),
+  );
+}
+
 export function parseLessons(rows: readonly JsonRecord[]): Lesson[] {
   const subjectsByPeriod = new Map<number, Set<string>>();
   for (const row of rows) {
@@ -204,7 +232,11 @@ export function parseLessons(rows: readonly JsonRecord[]): Lesson[] {
     subjectsByPeriod.set(period, subjects);
   }
   return [...subjectsByPeriod.entries()]
-    .map(([period, subjects]) => ({ period, subject: combineSubjects([...subjects]) }))
+    .map(([period, subjects]) => ({
+      period,
+      subject: combineSubjects([...subjects]),
+      ...(subjects.size > 1 ? { ambiguous: true } : {}),
+    }))
     .sort((left, right) => left.period - right.period);
 }
 
@@ -212,8 +244,7 @@ function combineSubjects(subjects: string[]): string {
   const ordered = subjects.sort((left, right) => left.localeCompare(right, "ko-KR"));
   if (ordered.length === 1) return ordered[0] ?? "";
 
-  const suffix = " (선택·이동 수업 가능)";
-  const limit = 100 - suffix.length;
+  const limit = 100;
   const selected: string[] = [];
   for (const subject of ordered) {
     const candidate = [...selected, subject].join(" 또는 ");
@@ -225,11 +256,11 @@ function combineSubjects(subjects: string[]): string {
   }
   const omitted = ordered.length - selected.length;
   const choices = selected.join(" 또는 ");
-  if (omitted === 0) return `${choices}${suffix}`;
+  if (omitted === 0) return choices;
 
   const omittedLabel = ` 외 ${omitted}개 과목`;
   const available = Math.max(1, limit - omittedLabel.length);
-  return `${choices.slice(0, available)}${omittedLabel}${suffix}`;
+  return `${choices.slice(0, available)}${omittedLabel}`;
 }
 
 function matchesTimetableRequest(row: JsonRecord, query: TimetableQuery, date: string): boolean {
@@ -239,6 +270,7 @@ function matchesTimetableRequest(row: JsonRecord, query: TimetableQuery, date: s
     ["ALL_TI_YMD", date.replaceAll("-", "")],
     ["GRADE", String(query.grade)],
     ["CLASS_NM", String(query.className)],
+    ...(query.department ? [["DDDEP_NM", query.department] as const] : []),
   ];
   return expectedFields.every(([field, expected]) => {
     const actual = stringField(row, field);
@@ -298,6 +330,39 @@ export class NeisClient {
     return parseSchools(payload);
   }
 
+  async getSchoolClasses(
+    officeCode: EducationOfficeCode,
+    schoolCode: string,
+    academicYear: number,
+  ): Promise<SchoolClass[]> {
+    if (this.isMockMode) {
+      const school = MOCK_SCHOOLS.find(
+        (item) => item.officeCode === officeCode && item.schoolCode === schoolCode,
+      );
+      if (!school) return [];
+      const maxGrade = school.kind === "초등학교" || school.kind === "특수학교" ? 6 : 3;
+      const departments = school.kind === "고등학교" ? ["정보보안과", "콘텐츠과"] : [undefined];
+      return departments.flatMap((department) =>
+        Array.from({ length: maxGrade }, (_, index) => index + 1).flatMap((grade) =>
+          ["1", "2", "3"].map((className) => ({
+            grade,
+            className,
+            ...(department ? { department } : {}),
+          })),
+        ),
+      );
+    }
+    this.assertConfigured();
+    const payload = await this.request("classInfo", {
+      ATPT_OFCDC_SC_CODE: officeCode,
+      SD_SCHUL_CODE: schoolCode,
+      AY: String(academicYear),
+      pIndex: "1",
+      pSize: "1000",
+    });
+    return parseSchoolClasses(payload);
+  }
+
   async getTodayTimetable(query: TimetableQuery, date: string): Promise<TimetableResponse> {
     const dataset = timetableDataset(query.kind);
     if (this.isMockMode) {
@@ -319,7 +384,7 @@ export class NeisClient {
     }
     this.assertConfigured();
 
-    const payload = await this.request(dataset, {
+    const parameters: Record<string, string> = {
       ATPT_OFCDC_SC_CODE: query.officeCode,
       SD_SCHUL_CODE: query.schoolCode,
       ALL_TI_YMD: date.replaceAll("-", ""),
@@ -327,7 +392,9 @@ export class NeisClient {
       CLASS_NM: String(query.className),
       pIndex: "1",
       pSize: "100",
-    });
+    };
+    if (query.department) parameters.DDDEP_NM = query.department;
+    const payload = await this.request(dataset, parameters);
     const rows = extractNeisRows(payload, dataset).filter((row) =>
       matchesTimetableRequest(row, query, date),
     );
@@ -377,7 +444,11 @@ export class NeisClient {
   }
 
   private async request(dataset: string, parameters: Readonly<Record<string, string>>): Promise<unknown> {
-    if (!Object.values(DATASETS).includes(dataset) && dataset !== "schoolInfo") {
+    if (
+      !Object.values(DATASETS).includes(dataset) &&
+      dataset !== "schoolInfo" &&
+      dataset !== "classInfo"
+    ) {
       throw new AppError("INVALID_INPUT", 400, "지원하지 않는 교육정보 요청입니다.");
     }
     const url = new URL(`${NEIS_BASE_URL}/${dataset}`);
@@ -482,11 +553,23 @@ export async function searchSchools(
 }
 
 export async function getTodayTimetable(query: TimetableQuery, date: string): Promise<TimetableResponse> {
-  const key = [date, query.officeCode, query.schoolCode, query.kind, query.grade, query.className].join(":");
+  const key = [date, query.officeCode, query.schoolCode, query.kind, query.department ?? "", query.grade, query.className].join(":");
   return timetableCache.getOrLoad(key, 5 * 60_000, () => new NeisClient().getTodayTimetable(query, date));
+}
+
+export async function getSchoolClasses(
+  officeCode: EducationOfficeCode,
+  schoolCode: string,
+  academicYear: number,
+): Promise<SchoolClass[]> {
+  const key = `${academicYear}:${officeCode}:${schoolCode}`;
+  return classCache.getOrLoad(key, 6 * 60 * 60_000, () =>
+    new NeisClient().getSchoolClasses(officeCode, schoolCode, academicYear),
+  );
 }
 
 export function clearNeisCaches(): void {
   schoolCache.clear();
+  classCache.clear();
   timetableCache.clear();
 }

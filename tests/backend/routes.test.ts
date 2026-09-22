@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { GET as healthRoute } from "@/app/api/health/route";
+import { GET as classesRoute } from "@/app/api/classes/route";
 import { GET as schoolsRoute } from "@/app/api/schools/route";
 import { GET as timetableRoute } from "@/app/api/timetable/today/route";
 import { clearVoiceRateLimit, GET as voiceRoute } from "@/app/api/voice/timetable/route";
@@ -99,6 +100,26 @@ describe("API routes", () => {
     expect(response.status).toBe(200);
     expect(requestedUrl?.pathname).toBe("/hub/schoolInfo");
     expect(requestedUrl?.searchParams.get("ATPT_OFCDC_SC_CODE")).toBe("C10");
+  });
+
+  it("returns NEIS-confirmed classes separated by department", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => neisResponse("classInfo", [
+        { GRADE: "2", CLASS_NM: "1", DDDEP_NM: "클라우드보안과" },
+        { GRADE: "2", CLASS_NM: "1", DDDEP_NM: "메타버스게임과" },
+      ])),
+    );
+    const response = await classesRoute(
+      request("/api/classes?officeCode=B10&schoolCode=7010911", "127.0.0.9"),
+    );
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({
+      classes: [
+        { grade: 2, className: "1", department: "메타버스게임과" },
+        { grade: 2, className: "1", department: "클라우드보안과" },
+      ],
+    });
   });
 
   it("does not force an office into an all-region school search", async () => {

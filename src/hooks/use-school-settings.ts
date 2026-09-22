@@ -18,6 +18,9 @@ function normalizeSchoolSettings(value: unknown): SchoolSettings | null {
     : typeof storedClassName === "string"
       ? storedClassName.trim()
       : "";
+  const department = typeof candidate.department === "string"
+    ? candidate.department.trim()
+    : undefined;
   const valid = Boolean(
     school &&
       typeof school.officeCode === "string" &&
@@ -36,7 +39,14 @@ function normalizeSchoolSettings(value: unknown): SchoolSettings | null {
       !/[\u0000-\u001f\u007f]/.test(className),
   );
   if (!valid || !school || !candidate.grade) return null;
-  return { school, grade: candidate.grade, className } as SchoolSettings;
+  return {
+    school,
+    grade: candidate.grade,
+    className,
+    ...(department && department.length <= 100 && !/[\u0000-\u001f\u007f]/.test(department)
+      ? { department }
+      : {}),
+  } as SchoolSettings;
 }
 
 export function useSchoolSettings() {

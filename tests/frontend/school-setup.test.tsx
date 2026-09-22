@@ -42,10 +42,16 @@ describe("SchoolSetup", () => {
   it("searches for a school, selects it, and saves grade and class", async () => {
     const user = userEvent.setup();
     const onSave = vi.fn();
-    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ schools: [highSchool] }), {
-      status: 200,
-      headers: { "Content-Type": "application/json" },
-    }));
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ schools: [highSchool] }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ classes: [
+        { grade: 2, className: "1", department: "클라우드보안과" },
+        { grade: 2, className: "2", department: "클라우드보안과" },
+        { grade: 2, className: "1", department: "메타버스게임과" },
+      ] }), { status: 200 }));
     vi.stubGlobal("fetch", fetchMock);
 
     render(<SchoolSetup onSave={onSave} />);
@@ -58,13 +64,17 @@ describe("SchoolSetup", () => {
     expect(screen.queryByRole("button", { name: "설정 저장하고 시간표 보기" })).not.toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: /한세사이버보안고등학교/ }));
 
-    expect(screen.getByText(/선택과목·학과별 이동 수업/)).toBeVisible();
+    expect(await screen.findByLabelText("학과")).toHaveValue("클라우드보안과");
     await user.selectOptions(screen.getByLabelText("학년"), "2");
-    await user.clear(screen.getByLabelText("반"));
-    await user.type(screen.getByLabelText("반"), "7");
+    await user.selectOptions(screen.getByLabelText("반"), "2");
     await user.click(screen.getByRole("button", { name: "설정 저장하고 시간표 보기" }));
 
-    expect(onSave).toHaveBeenCalledWith({ school: highSchool, grade: 2, className: "7" });
+    expect(onSave).toHaveBeenCalledWith({
+      school: highSchool,
+      grade: 2,
+      className: "2",
+      department: "클라우드보안과",
+    });
   });
 
   it("omits the office code for nationwide searches and distinguishes same-name schools", async () => {

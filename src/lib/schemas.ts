@@ -28,6 +28,16 @@ const className = z
     message: "반 이름에 사용할 수 없는 문자가 있습니다.",
   });
 
+const optionalNeisLabel = z
+  .string()
+  .trim()
+  .min(1)
+  .max(100)
+  .refine((value) => !/[\u0000-\u001f\u007f]/.test(value), {
+    message: "사용할 수 없는 문자가 있습니다.",
+  })
+  .optional();
+
 export const schoolSearchSchema = z.object({
   officeCode: z.enum(EDUCATION_OFFICE_CODES, {
     message: "지원하지 않는 지역 코드입니다.",
@@ -53,6 +63,7 @@ export const timetableQuerySchema = z
     }),
     grade: positiveInteger("학년", 6),
     className,
+    department: optionalNeisLabel,
   })
   .superRefine(({ kind, grade }, context) => {
     if ((kind === "중학교" || kind === "고등학교") && grade > 3) {
@@ -66,6 +77,13 @@ export const timetableQuerySchema = z
 
 export type TimetableQuery = z.infer<typeof timetableQuerySchema>;
 
+export const classQuerySchema = z.object({
+  officeCode: z.enum(EDUCATION_OFFICE_CODES, {
+    message: "지원하지 않는 지역 코드입니다.",
+  }),
+  schoolCode: compactCode,
+});
+
 export function searchParamsToRecord(params: URLSearchParams): Record<string, string | undefined> {
   return {
     officeCode: params.get("officeCode") ?? undefined,
@@ -73,5 +91,6 @@ export function searchParamsToRecord(params: URLSearchParams): Record<string, st
     kind: params.get("kind") ?? undefined,
     grade: params.get("grade") ?? undefined,
     className: params.get("className") ?? undefined,
+    department: params.get("department") ?? undefined,
   };
 }

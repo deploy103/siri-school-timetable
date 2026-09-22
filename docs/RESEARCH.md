@@ -7,6 +7,7 @@
 ## 결론 요약
 
 - 학교 검색은 `schoolInfo`, 시간표는 학교 종류에 따라 `elsTimetable`(초), `misTimetable`(중), `hisTimetable`(고), `spsTimetable`(특수)을 사용한다.
+- 실제 학급 선택은 `classInfo`의 `GRADE`, `CLASS_NM`, `DDDEP_NM`을 사용한다. 특성화고에서는 서로 다른 학과가 같은 학년·반 이름을 가질 수 있다.
 - 시간표 API에서 실제 필수인 신청 인자는 `ATPT_OFCDC_SC_CODE`와 `SD_SCHUL_CODE`이다. 오늘 시간표에는 이 둘과 KST 기준 `ALL_TI_YMD=yyyyMMdd`, `GRADE`, `CLASS_NM`을 보낸다.
 - `schoolInfo`의 검색 필터는 공식 메타데이터상 모두 선택 사항이다. 이름 검색에는 `SCHUL_NM`을 쓰고, 결과의 교육청, 학교 종류, 시도와 도로명 주소를 함께 표시해야 동명 학교를 구분할 수 있다.
 - NEIS의 업무상 성공/실패는 HTTP 상태만으로 판정할 수 없다. 정상 목록의 `head[].RESULT`와, 빈 결과·오류 때 최상위에 오는 `RESULT`를 모두 해석해야 한다. 확인한 논리 오류 응답은 HTTP 200이었다.
@@ -147,6 +148,8 @@ ALL_TI_YMD=<Asia/Seoul의 오늘, yyyyMMdd>
 GRADE=<사용자 학년>
 CLASS_NM=<사용자 반>
 ```
+
+특성화고처럼 `classInfo`에서 같은 `GRADE + CLASS_NM`이 여러 `DDDEP_NM`으로 반환되면 학과를 UI에서 함께 선택하고 고등학교 시간표 요청에도 `DDDEP_NM`을 전달해야 한다. 2026-09-22 한세사이버보안고등학교 실호출에서 같은 2학년 1반이 여러 학과로 존재하며, `DDDEP_NM=클라우드보안과`를 추가했을 때 해당 학과의 행만 반환되는 것을 확인했다.
 
 단일 날짜에는 `ALL_TI_YMD`를 우선한다. 범위 조회가 필요할 때만 `TI_FROM_YMD`와 `TI_TO_YMD`를 함께 사용한다. `CLASS_NM`은 숫자형으로 가정할 수 없는 원천 문자열이다. 실제 2026-09-22 `elsTimetable` 응답에서 경기초등학교 1학년의 `CLASS_NM="난초"`를 확인했다. 따라서 전국 지원 UI가 반을 1~20 숫자로만 제한하면 일부 학교를 누락한다. 학급정보 API로 가능한 반을 조회해 고르게 하거나, 최소한 길이와 허용문자를 검증한 짧은 문자열 반을 받을 수 있어야 한다.
 

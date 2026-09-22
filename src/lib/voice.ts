@@ -7,7 +7,7 @@ export function timetableToSpeech(timetable: TimetableResponse): string {
   const lessons = timetable.lessons
     .slice()
     .sort((left, right) => left.period - right.period)
-    .map((lesson) => `${lesson.period}교시 ${lesson.subject.trim()}`)
+    .map((lesson) => `${lesson.period}교시 ${lesson.ambiguous ? "선택 수업" : lesson.subject.trim()}`)
     .join(", ");
   return `오늘 시간표는 ${lessons}입니다.`;
 }

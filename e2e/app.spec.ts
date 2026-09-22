@@ -16,7 +16,7 @@ test("mobile-first setup, timetable, persistence, and Siri flow", async ({ page 
   await expect(page.getByRole("button", { name: /부산미래중학교/ })).toContainText("부산광역시");
   await page.getByRole("button", { name: /부산미래중학교/ }).click();
   await page.getByLabel("학년", { exact: true }).selectOption("2");
-  await page.getByLabel("반", { exact: true }).fill("1");
+  await page.getByLabel("반", { exact: true }).selectOption("1");
   await page.getByRole("button", { name: "설정 저장하고 시간표 보기" }).click();
 
   await expect(page.getByRole("heading", { name: "부산미래중학교" })).toBeVisible();
@@ -31,7 +31,7 @@ test("mobile-first setup, timetable, persistence, and Siri flow", async ({ page 
   await expect(page.getByRole("heading", { name: "학교 설정 변경" })).toBeVisible();
   await expect(page.getByLabel("지역", { exact: true })).toHaveValue("C10");
   await page.getByLabel("학년", { exact: true }).selectOption("3");
-  await page.getByLabel("반", { exact: true }).fill("2");
+  await page.getByLabel("반", { exact: true }).selectOption("2");
   await page.getByRole("button", { name: "설정 저장하고 시간표 보기" }).click();
   await expect(page.getByText("3학년 2반")).toBeVisible();
 
@@ -49,4 +49,22 @@ test("mobile-first setup, timetable, persistence, and Siri flow", async ({ page 
   );
   expect(hasHorizontalOverflow).toBe(false);
   expect(consoleErrors).toEqual([]);
+});
+
+test("vocational schools keep same-number classes separated by department", async ({ page }) => {
+  await page.goto("/");
+  await page.getByLabel("지역", { exact: true }).selectOption("B10");
+  await page.getByLabel("학교 이름").fill("한세");
+  await page.getByRole("button", { name: "검색" }).click();
+  await page.getByRole("button", { name: /한세사이버보안고등학교/ }).click();
+
+  await expect(page.getByLabel("학과", { exact: true })).toBeVisible();
+  await page.getByLabel("학과", { exact: true }).selectOption("콘텐츠과");
+  await page.getByLabel("학년", { exact: true }).selectOption("2");
+  await page.getByLabel("반", { exact: true }).selectOption("3");
+  await page.getByRole("button", { name: "설정 저장하고 시간표 보기" }).click();
+
+  await expect(page.getByText("콘텐츠과 · 2학년 3반")).toBeVisible();
+  await page.getByRole("button", { name: "Siri 설정" }).click();
+  await expect(page.getByLabel("내 시간표 주소")).toHaveValue(/department=%EC%BD%98%ED%85%90%EC%B8%A0%EA%B3%BC/);
 });

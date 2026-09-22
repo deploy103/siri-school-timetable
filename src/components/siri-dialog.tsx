@@ -18,6 +18,7 @@ export function makeVoiceUrl(origin: string, settings: SchoolSettings): string {
     grade: String(settings.grade),
     className: String(settings.className),
   });
+  if (settings.department) params.set("department", settings.department);
   return `${origin}/api/voice/timetable?${params.toString()}`;
 }
 
@@ -95,7 +96,7 @@ export function SiriDialog({ open, settings, onClose }: Props) {
               {copied ? <><CheckIcon />복사됨</> : <><CopyIcon />복사</>}
             </button>
           </div>
-          <small>학교 코드와 학년·반만 포함되며, API 키나 개인정보는 포함되지 않습니다.</small>
+          <small>학교 코드와 학과·학년·반만 포함되며, API 키나 개인정보는 포함되지 않습니다.</small>
         </div>
 
         <ol className="shortcut-steps">

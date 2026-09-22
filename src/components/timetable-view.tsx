@@ -38,13 +38,17 @@ export function TimetableView({ settings, onChangeSettings }: Props) {
   const [siriOpen, setSiriOpen] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
 
-  const query = useMemo(() => new URLSearchParams({
+  const query = useMemo(() => {
+    const params = new URLSearchParams({
     officeCode: settings.school.officeCode,
     schoolCode: settings.school.schoolCode,
     kind: settings.school.kind,
     grade: String(settings.grade),
     className: String(settings.className),
-  }).toString(), [settings]);
+    });
+    if (settings.department) params.set("department", settings.department);
+    return params.toString();
+  }, [settings]);
 
   const loadTimetable = useCallback(async () => {
     setIsLoading(true);
@@ -76,7 +80,9 @@ export function TimetableView({ settings, onChangeSettings }: Props) {
       setIsSpeaking(false);
       return;
     }
-    const text = `오늘 시간표는 ${timetable.lessons.map((lesson) => `${lesson.period}교시 ${lesson.subject}`).join(", ")}입니다.`;
+    const text = `오늘 시간표는 ${timetable.lessons.map((lesson) =>
+      `${lesson.period}교시 ${lesson.ambiguous ? "선택 수업" : lesson.subject}`
+    ).join(", ")}입니다.`;
     const utterance = new SpeechSynthesisUtterance(text);
     utterance.lang = "ko-KR";
     utterance.rate = 0.95;
@@ -98,7 +104,7 @@ export function TimetableView({ settings, onChangeSettings }: Props) {
         <div>
           <p className="date-line">{timetable ? formatDate(timetable.date) : "오늘 시간표"}</p>
           <h1>{settings.school.name}</h1>
-          <p>{settings.grade}학년 {settings.className}반</p>
+          <p>{settings.department ? `${settings.department} · ` : ""}{settings.grade}학년 {settings.className}반</p>
         </div>
         {!isLoading && !error && <span className="today-badge">오늘</span>}
       </section>
@@ -132,14 +138,21 @@ export function TimetableView({ settings, onChangeSettings }: Props) {
       )}
 
       {!isLoading && !error && timetable && timetable.lessons.length > 0 && (
-        <ol className="lesson-list">
-          {timetable.lessons.map((lesson) => (
-            <li key={lesson.period}>
-              <span className="period-number">{lesson.period}</span>
-              <div><small>{lesson.period}교시</small><strong>{lesson.subject}</strong></div>
-            </li>
-          ))}
-        </ol>
+        <>
+          {(timetable.lessons[0]?.period ?? 1) > 1 && (
+            <p className="period-gap-notice">
+              NEIS에 1~{(timetable.lessons[0]?.period ?? 1) - 1}교시 수업 정보가 없어 {(timetable.lessons[0]?.period ?? 1)}교시부터 표시합니다.
+            </p>
+          )}
+          <ol className="lesson-list">
+            {timetable.lessons.map((lesson) => (
+              <li key={lesson.period}>
+                <span className="period-number">{lesson.period}</span>
+                <div><small>{lesson.period}교시</small><strong>{lesson.subject}</strong></div>
+              </li>
+            ))}
+          </ol>
+        </>
       )}
 
       <section className="action-grid" aria-label="시간표 동작">

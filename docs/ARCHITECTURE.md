@@ -17,7 +17,7 @@ iPhone 단축어 ── same-origin text/plain ──> /api/voice/timetable
 ## 주요 흐름
 
 1. `GET /api/schools?officeCode=...&name=...`가 학교명과 선택적인 17개 시도교육청 코드를 검증하고 `schoolInfo`를 조회한다. 전체 지역 검색은 `officeCode`를 생략한다.
-2. 사용자가 고른 학교의 교육청 코드, 학교 코드, 학교 종류와 학년·반을 `localStorage`에 저장한다. 이 값은 공개 데이터와 사용자 설정이며 인증 정보가 아니다.
+2. `classInfo`에서 학과·학년·반을 조회하고, 사용자가 고른 학교의 교육청 코드, 학교 코드, 학교 종류와 선택 학과·학년·반을 `localStorage`에 저장한다. 이 값은 공개 데이터와 사용자 설정이며 인증 정보가 아니다.
 3. `GET /api/timetable/today`는 서울 시간대의 날짜를 구하고 학교 종류에 맞는 NEIS 데이터셋을 선택한다.
 4. NEIS 행은 공백 제거, 유효 교시 필터, 교시 중복 제거, 오름차순 정렬을 거쳐 안정적인 응답 형식으로 변환된다.
 5. 음성 API는 같은 조회 결과를 한국어 문장으로 직렬화해 `text/plain; charset=utf-8`로 반환한다.
@@ -28,6 +28,7 @@ iPhone 단축어 ── same-origin text/plain ──> /api/voice/timetable
 | --- | --- | --- | --- |
 | `/api/health` | JSON | `no-store` | 없음 |
 | `/api/schools?officeCode=&name=` | JSON | 지역·검색어별 서버 캐시 + private 캐시 헤더 | 검색용 제한 |
+| `/api/classes?officeCode=&schoolCode=` | JSON | 학교·학년도별 서버 캐시 + private 캐시 헤더 | 검색용 제한 |
 | `/api/timetable/today?...` | JSON | 짧은 서버 캐시 + private 캐시 헤더 | 시간표용 제한 |
 | `/api/voice/timetable?...` | UTF-8 text | 짧은 서버 캐시 | 시간표용 제한 |
 

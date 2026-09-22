@@ -16,11 +16,19 @@ export interface SchoolSettings {
   school: School;
   grade: number;
   className: string;
+  department?: string;
 }
 
 export interface Lesson {
   period: number;
   subject: string;
+  ambiguous?: boolean;
+}
+
+export interface SchoolClass {
+  grade: number;
+  className: string;
+  department?: string;
 }
 
 export interface Timetable {
@@ -33,6 +41,10 @@ export interface Timetable {
 
 export interface SchoolsResponse {
   schools: School[];
+}
+
+export interface ClassesResponse {
+  classes: SchoolClass[];
 }
 
 export interface ApiErrorBody {

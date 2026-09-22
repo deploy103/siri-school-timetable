@@ -1,9 +1,16 @@
 "use client";
 
-import { FormEvent, useMemo, useRef, useState } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { CheckIcon, SearchIcon } from "@/components/icons";
 import { EDUCATION_OFFICES } from "@/lib/education-offices";
-import type { ApiErrorBody, School, SchoolSettings, SchoolsResponse } from "@/types/client";
+import type {
+  ApiErrorBody,
+  ClassesResponse,
+  School,
+  SchoolClass,
+  SchoolSettings,
+  SchoolsResponse,
+} from "@/types/client";
 
 interface Props {
   initialSettings?: SchoolSettings | null;
@@ -31,15 +38,83 @@ export function SchoolSetup({ initialSettings, onSave, onCancel }: Props) {
   const [selected, setSelected] = useState<School | null>(initialSettings?.school ?? null);
   const [grade, setGrade] = useState(initialSettings?.grade ?? 1);
   const [className, setClassName] = useState(initialSettings?.className ?? "1");
+  const [department, setDepartment] = useState(initialSettings?.department ?? "");
+  const [classOptions, setClassOptions] = useState<SchoolClass[] | null>(null);
+  const [isLoadingClasses, setIsLoadingClasses] = useState(false);
+  const [classError, setClassError] = useState<string | null>(null);
   const [isSearching, setIsSearching] = useState(false);
   const [hasSearched, setHasSearched] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const resultsHeading = useRef<HTMLHeadingElement>(null);
 
-  const grades = useMemo(
-    () => Array.from({ length: selected ? gradeLimit(selected) : 3 }, (_, index) => index + 1),
-    [selected],
+  const departmentOptions = useMemo(
+    () => [...new Set((classOptions ?? []).map((item) => item.department).filter(Boolean))] as string[],
+    [classOptions],
   );
+  const classesForDepartment = useMemo(
+    () => (classOptions ?? []).filter((item) => (item.department ?? "") === department),
+    [classOptions, department],
+  );
+  const grades = useMemo(() => {
+    if (classesForDepartment.length > 0) {
+      return [...new Set(classesForDepartment.map((item) => item.grade))].sort((a, b) => a - b);
+    }
+    return Array.from({ length: selected ? gradeLimit(selected) : 3 }, (_, index) => index + 1);
+  }, [classesForDepartment, selected]);
+  const classNames = useMemo(
+    () => [...new Set(classesForDepartment
+      .filter((item) => item.grade === grade)
+      .map((item) => item.className))]
+      .sort((left, right) => left.localeCompare(right, "ko-KR", { numeric: true })),
+    [classesForDepartment, grade],
+  );
+
+  const loadClasses = useCallback(async (school: School, preferred?: Partial<SchoolSettings>) => {
+    setIsLoadingClasses(true);
+    setClassError(null);
+    setClassOptions(null);
+    try {
+      const params = new URLSearchParams({
+        officeCode: school.officeCode,
+        schoolCode: school.schoolCode,
+      });
+      const response = await fetch(`/api/classes?${params.toString()}`);
+      if (!response.ok) throw new Error(await readError(response));
+      const body = (await response.json()) as ClassesResponse;
+      const classes = Array.isArray(body.classes) ? body.classes : [];
+      setClassOptions(classes);
+      const matched = classes.find((item) =>
+        item.grade === preferred?.grade &&
+        item.className === preferred.className &&
+        (item.department ?? "") === (preferred.department ?? ""),
+      ) ?? classes[0];
+      if (matched) {
+        setDepartment(matched.department ?? "");
+        setGrade(matched.grade);
+        setClassName(matched.className);
+      } else {
+        setClassError("NEIS에서 확인된 학급이 없어 직접 입력해야 합니다.");
+      }
+    } catch (reason) {
+      setClassOptions([]);
+      setClassError(
+        reason instanceof Error
+          ? `${reason.message} 학급을 직접 입력할 수 있습니다.`
+          : "학급 정보를 불러오지 못했습니다. 직접 입력해 주세요.",
+      );
+    } finally {
+      setIsLoadingClasses(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!initialSettings?.school) return;
+    const timer = window.setTimeout(
+      () => void loadClasses(initialSettings.school, initialSettings),
+      0,
+    );
+    return () => window.clearTimeout(timer);
+  }, [initialSettings, loadClasses]);
 
   async function search(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -70,8 +145,27 @@ export function SchoolSetup({ initialSettings, onSave, onCancel }: Props) {
 
   function chooseSchool(school: School) {
     setSelected(school);
+    setDepartment("");
     setGrade(1);
     setClassName("1");
+    void loadClasses(school, { grade: 1, className: "1" });
+  }
+
+  function changeDepartment(nextDepartment: string) {
+    const first = (classOptions ?? []).find(
+      (item) => (item.department ?? "") === nextDepartment,
+    );
+    setDepartment(nextDepartment);
+    if (first) {
+      setGrade(first.grade);
+      setClassName(first.className);
+    }
+  }
+
+  function changeGrade(nextGrade: number) {
+    const first = classesForDepartment.find((item) => item.grade === nextGrade);
+    setGrade(nextGrade);
+    if (first) setClassName(first.className);
   }
 
   function changeOffice(nextOfficeCode: string) {
@@ -79,14 +173,23 @@ export function SchoolSetup({ initialSettings, onSave, onCancel }: Props) {
     setResults([]);
     setHasSearched(false);
     setError(null);
-    if (selected?.officeCode !== nextOfficeCode) setSelected(null);
+    if (selected?.officeCode !== nextOfficeCode) {
+      setSelected(null);
+      setClassOptions(null);
+      setDepartment("");
+    }
   }
 
   function save(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const normalizedClassName = className.trim();
     if (selected && normalizedClassName) {
-      onSave({ school: selected, grade, className: normalizedClassName });
+      onSave({
+        school: selected,
+        grade,
+        className: normalizedClassName,
+        ...(department ? { department } : {}),
+      });
     }
   }
 
@@ -197,30 +300,63 @@ export function SchoolSetup({ initialSettings, onSave, onCancel }: Props) {
             <small>{selected.address}</small>
           </div>
           <form onSubmit={save}>
+            {isLoadingClasses && <p className="searching-message">NEIS에서 학과와 학급을 확인하고 있어요.</p>}
+            {classError && <p className="inline-error">{classError}</p>}
             <div className="select-grid">
+              {departmentOptions.length > 0 && (
+                <div className="full-grid-field">
+                  <label htmlFor="school-department">학과</label>
+                  <select
+                    id="school-department"
+                    value={department}
+                    onChange={(event) => changeDepartment(event.target.value)}
+                    disabled={isLoadingClasses}
+                  >
+                    {departmentOptions.map((item) => <option key={item} value={item}>{item}</option>)}
+                  </select>
+                </div>
+              )}
               <div>
                 <label htmlFor="school-grade">학년</label>
-                <select id="school-grade" value={grade} onChange={(event) => setGrade(Number(event.target.value))}>
+                <select
+                  id="school-grade"
+                  value={grade}
+                  onChange={(event) => changeGrade(Number(event.target.value))}
+                  disabled={isLoadingClasses}
+                >
                   {grades.map((item) => <option key={item} value={item}>{item}학년</option>)}
                 </select>
               </div>
               <div>
                 <label htmlFor="school-class">반</label>
-                <input
-                  id="school-class"
-                  value={className}
-                  onChange={(event) => setClassName(event.target.value)}
-                  maxLength={20}
-                  placeholder="예: 1 또는 난초"
-                  required
-                />
-                <p className="field-help">숫자 또는 학교에서 사용하는 반 이름을 입력하세요.</p>
+                {classNames.length > 0 ? (
+                  <select
+                    id="school-class"
+                    value={className}
+                    onChange={(event) => setClassName(event.target.value)}
+                    disabled={isLoadingClasses}
+                  >
+                    {classNames.map((item) => <option key={item} value={item}>{item}반</option>)}
+                  </select>
+                ) : (
+                  <input
+                    id="school-class"
+                    value={className}
+                    onChange={(event) => setClassName(event.target.value)}
+                    maxLength={20}
+                    placeholder="예: 1 또는 난초"
+                    required
+                  />
+                )}
+                <p className="field-help">
+                  {classNames.length > 0 ? "NEIS에서 확인된 반만 표시합니다." : "숫자 또는 학교에서 사용하는 반 이름을 입력하세요."}
+                </p>
               </div>
             </div>
             {(selected.kind === "고등학교" || selected.kind === "특수학교") && (
               <p className="course-notice">
                 {selected.kind === "고등학교"
-                  ? "선택과목·학과별 이동 수업은 학년과 반만으로 정확히 구분되지 않아 가능한 수업을 함께 표시할 수 있어요."
+                  ? "특성화고는 학과까지 선택해 다른 학과의 같은 학년·반과 구분합니다."
                   : "학교 과정·강의실이 여러 개인 경우 학년과 반만으로 정확히 구분되지 않아 가능한 수업을 함께 표시할 수 있어요."}
               </p>
             )}

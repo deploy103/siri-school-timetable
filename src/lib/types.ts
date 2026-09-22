@@ -20,6 +20,13 @@ export interface School {
 export interface Lesson {
   period: number;
   subject: string;
+  ambiguous?: boolean;
+}
+
+export interface SchoolClass {
+  grade: number;
+  className: string;
+  department?: string;
 }
 
 export interface TimetableResponse {

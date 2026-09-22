@@ -40,6 +40,20 @@ describe("TimetableView", () => {
     expect(screen.getByText(/주말·휴업일/)).toBeVisible();
   });
 
+  it("explains when NEIS starts the returned timetable after first period", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(jsonResponse({
+      date: "2026-09-22",
+      school: { name: settings.school.name, kind: settings.school.kind },
+      grade: 4,
+      className: "2",
+      lessons: [{ period: 3, subject: "국어" }],
+    })));
+    render(<TimetableView settings={settings} onChangeSettings={vi.fn()} />);
+
+    expect(await screen.findByText(/1~2교시 수업 정보가 없어 3교시부터 표시/)).toBeVisible();
+    expect(screen.queryByText("1교시", { exact: true })).not.toBeInTheDocument();
+  });
+
   it("shows a safe error and retries the request", async () => {
     const user = userEvent.setup();
     const fetchMock = vi.fn()

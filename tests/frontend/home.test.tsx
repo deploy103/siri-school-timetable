@@ -79,6 +79,9 @@ describe("HomePage", () => {
     const school = { ...settings.school, name: "새학교" };
     const fetchMock = vi.fn()
       .mockResolvedValueOnce(new Response(JSON.stringify({ schools: [school] }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ classes: [
+        { grade: 3, className: "4" },
+      ] }), { status: 200 }))
       .mockResolvedValueOnce(new Response(JSON.stringify({ ...timetable, school: { name: "새학교", kind: "중학교" } }), { status: 200 }));
     vi.stubGlobal("fetch", fetchMock);
     render(<HomePage />);
@@ -87,9 +90,8 @@ describe("HomePage", () => {
     await user.type(await screen.findByLabelText("학교 이름"), "새학교");
     await user.click(screen.getByRole("button", { name: "검색" }));
     await user.click(await screen.findByRole("button", { name: /새학교/ }));
-    await user.selectOptions(screen.getByLabelText("학년"), "3");
-    await user.clear(screen.getByLabelText("반"));
-    await user.type(screen.getByLabelText("반"), "4");
+    await waitFor(() => expect(screen.getByLabelText("학년")).toHaveValue("3"));
+    await user.selectOptions(screen.getByLabelText("반"), "4");
     await user.click(screen.getByRole("button", { name: "설정 저장하고 시간표 보기" }));
 
     await waitFor(() => expect(JSON.parse(window.localStorage.getItem(STORAGE_KEY) ?? "null")).toEqual({ school, grade: 3, className: "4" }));

@@ -19,6 +19,7 @@
 
 - 전국 초·중·고 및 지원되는 특수학교 검색(지역·주소·학교 유형 표시)
 - 학교 종류에 따른 NEIS 시간표 데이터셋 자동 선택
+- NEIS `classInfo` 기반 학과·학년·반 선택으로 특성화고 동명 학급 구분
 - 서울 시간 기준 오늘 시간표, 교시 정렬 및 중복/비정상 행 정리
 - `localStorage` 기반 학교·학년·반 복원과 언제든 설정 변경
 - 브라우저 Web Speech API로 시간표 미리 듣기
@@ -131,11 +132,14 @@ URL
 GET /api/health
 GET /api/schools?name=학교명
 GET /api/schools?officeCode=B10&name=학교명
+GET /api/classes?officeCode=B10&schoolCode=학교코드
 GET /api/timetable/today?officeCode=...&schoolCode=...&kind=...&grade=2&className=1
 GET /api/voice/timetable?officeCode=...&schoolCode=...&kind=...&grade=2&className=1
 ```
 
-학교 설정 화면에서 17개 시도교육청 또는 전체 지역을 선택한 뒤 학교명을 검색합니다. 지역 검색은 `officeCode`를 NEIS `ATPT_OFCDC_SC_CODE`로 전달하며, 전체 지역 검색은 해당 파라미터를 생략합니다. 동명 학교는 지역·주소·학교 종류를 함께 표시하고 개별 결과를 그대로 유지합니다. 학교·시간표 API는 JSON을 반환하고, 음성 API는 단축어가 그대로 말할 수 있는 `text/plain; charset=utf-8` 문장을 반환합니다.
+학교 설정 화면에서 17개 시도교육청 또는 전체 지역을 선택한 뒤 학교명을 검색합니다. 학교 선택 후에는 NEIS가 제공한 학과·학년·반만 선택할 수 있습니다. 특성화고는 `DDDEP_NM`까지 시간표 요청에 전달해 서로 다른 학과의 같은 학년·반이 섞이지 않습니다. 학교·시간표 API는 JSON을 반환하고, 음성 API는 단축어가 그대로 말할 수 있는 `text/plain; charset=utf-8` 문장을 반환합니다.
+
+NEIS가 1·2교시 행 없이 3교시부터 반환하면 화면도 3교시부터 표시하고 그 이유를 안내합니다. 서로 다른 과목이 같은 교시에 남는 경우 화면에는 후보를 표시하되 Siri는 긴 후보 목록 대신 `선택 수업`이라고 짧게 읽습니다.
 
 ## 디렉터리 구조
 

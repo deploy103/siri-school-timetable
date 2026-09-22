@@ -100,9 +100,9 @@ describe("speech generation", () => {
     expect(
       timetableToSpeech({
         ...base,
-        lessons: [{ period: 3, subject: "음악 또는 체육 (선택·이동 수업 가능)" }],
+        lessons: [{ period: 3, subject: "음악 또는 체육", ambiguous: true }],
       }),
-    ).toBe("오늘 시간표는 3교시 음악 또는 체육 (선택·이동 수업 가능)입니다.");
+    ).toBe("오늘 시간표는 3교시 선택 수업입니다.");
   });
 
   it("guides Siri users back to settings when a school no longer exists", () => {
