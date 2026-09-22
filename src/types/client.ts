@@ -9,12 +9,13 @@ export interface School {
   kind: SchoolKind;
   address: string;
   region: string;
+  locality?: string;
 }
 
 export interface SchoolSettings {
   school: School;
   grade: number;
-  className: number;
+  className: string;
 }
 
 export interface Lesson {
@@ -26,7 +27,7 @@ export interface Timetable {
   date: string;
   school: Pick<School, "name" | "kind">;
   grade: number;
-  className: number;
+  className: string;
   lessons: Lesson[];
 }
 

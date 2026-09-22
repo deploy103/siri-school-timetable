@@ -1,23 +1,29 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { AppError } from "@/lib/errors";
+import type { TimetableQuery } from "@/lib/schemas";
 import {
   NeisClient,
+  clearNeisCaches,
   extractNeisRows,
   parseLessons,
   parseSchools,
   timetableDataset,
+  searchSchools,
 } from "@/lib/neis";
 
-const query = {
+const query: TimetableQuery = {
   officeCode: "B10",
   schoolCode: "7010911",
   kind: "고등학교" as const,
   grade: 2,
-  className: 1,
+  className: "1",
 };
 
 afterEach(() => {
   vi.useRealTimers();
+  vi.unstubAllEnvs();
+  vi.unstubAllGlobals();
+  clearNeisCaches();
 });
 
 describe("NEIS dataset mapping", () => {
@@ -82,6 +88,48 @@ describe("NEIS parsing", () => {
     ).toThrowError(AppError);
   });
 
+  it.each([
+    ["ERROR-290", "NEIS_AUTH_ERROR", 502],
+    ["ERROR-337", "NEIS_QUOTA_EXCEEDED", 503],
+    ["INFO-300", "NEIS_AUTH_ERROR", 502],
+    ["ERROR-300", "NEIS_ERROR", 502],
+    ["ERROR-310", "NEIS_ERROR", 502],
+    ["ERROR-333", "NEIS_ERROR", 502],
+    ["ERROR-336", "NEIS_ERROR", 502],
+    ["ERROR-500", "NEIS_UNAVAILABLE", 503],
+    ["ERROR-600", "NEIS_UNAVAILABLE", 503],
+    ["ERROR-601", "NEIS_UNAVAILABLE", 503],
+  ])("maps logical result %s to %s", (upstreamCode, expectedCode, status) => {
+    expect(() =>
+      extractNeisRows({ RESULT: { CODE: upstreamCode, MESSAGE: "sensitive upstream text" } }, "schoolInfo"),
+    ).toThrowError(
+      expect.objectContaining({ code: expectedCode, status }),
+    );
+  });
+
+  it("returns every distinct same-name school", () => {
+    const base = {
+      SCHUL_NM: "미래초등학교",
+      SCHUL_KND_SC_NM: "초등학교",
+      ORG_RDNMA: "테스트로 1",
+      LCTN_SC_NM: "테스트시",
+    };
+    const schools = parseSchools({
+      schoolInfo: [
+        { head: [{ RESULT: { CODE: "INFO-000", MESSAGE: "정상" } }] },
+        {
+          row: [
+            { ...base, ATPT_OFCDC_SC_CODE: "B10", ATPT_OFCDC_SC_NM: "서울특별시교육청", SD_SCHUL_CODE: "1" },
+            { ...base, ATPT_OFCDC_SC_CODE: "C10", ATPT_OFCDC_SC_NM: "부산광역시교육청", SD_SCHUL_CODE: "2" },
+          ],
+        },
+      ],
+    });
+    expect(schools).toHaveLength(2);
+    expect(new Set(schools.map(({ officeCode }) => officeCode))).toEqual(new Set(["B10", "C10"]));
+    expect(schools[0]).toMatchObject({ locality: "테스트시" });
+  });
+
   it("sorts periods, collapses exact duplicates, and surfaces elective alternatives", () => {
     expect(
       parseLessons([
@@ -113,6 +161,31 @@ describe("NEIS parsing", () => {
 });
 
 describe("NeisClient", () => {
+  it("logs explicit mock mode in production without logging an API key", () => {
+    vi.stubEnv("NODE_ENV", "production");
+    const warning = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    new NeisClient({ apiKey: "must-not-appear", mockMode: true });
+    expect(warning).toHaveBeenCalledWith("NEIS mock mode enabled");
+    expect(warning.mock.calls.flat().join(" ")).not.toContain("must-not-appear");
+  });
+
+  it("adds the selected office to schoolInfo but omits it for an all-region search", async () => {
+    const requested: URL[] = [];
+    const fetchImplementation: typeof fetch = vi.fn(async (input) => {
+      requested.push(new URL(String(input)));
+      return new Response(JSON.stringify({ RESULT: { CODE: "INFO-200", MESSAGE: "없음" } }));
+    });
+    const client = new NeisClient({ apiKey: "secret-key", fetchImplementation, maxAttempts: 1 });
+
+    await client.searchSchools("미래학교", "B10");
+    await client.searchSchools("미래학교");
+
+    expect(requested[0]?.searchParams.get("ATPT_OFCDC_SC_CODE")).toBe("B10");
+    expect(requested[0]?.searchParams.get("SCHUL_NM")).toBe("미래학교");
+    expect(requested[0]?.searchParams.get("pSize")).toBe("100");
+    expect(requested[1]?.searchParams.has("ATPT_OFCDC_SC_CODE")).toBe(false);
+  });
+
   it("uses only the fixed HTTPS host and correct timetable parameters", async () => {
     let requestedUrl = "";
     const fetchImplementation: typeof fetch = vi.fn(async (input) => {
@@ -146,6 +219,22 @@ describe("NeisClient", () => {
       retryDelayMs: 0,
     });
     await expect(client.searchSchools("테스트학교")).rejects.toMatchObject({ code: "NEIS_UNAVAILABLE" });
+    expect(fetchImplementation).toHaveBeenCalledTimes(2);
+  });
+
+  it("retries transient NEIS logical server errors", async () => {
+    const fetchImplementation: typeof fetch = vi.fn(async () =>
+      new Response(JSON.stringify({ RESULT: { CODE: "ERROR-500", MESSAGE: "server error" } })),
+    );
+    const client = new NeisClient({
+      apiKey: "secret-key",
+      fetchImplementation,
+      maxAttempts: 2,
+      retryDelayMs: 0,
+    });
+    await expect(client.searchSchools("테스트학교")).rejects.toMatchObject({
+      code: "NEIS_UNAVAILABLE",
+    });
     expect(fetchImplementation).toHaveBeenCalledTimes(2);
   });
 
@@ -184,11 +273,81 @@ describe("NeisClient", () => {
     await request;
   });
 
-  it("provides deterministic mock data when no API key exists", async () => {
-    const client = new NeisClient({ apiKey: "" });
+  it("rejects a missing key unless mock mode is explicitly enabled", async () => {
+    const client = new NeisClient({ apiKey: "", mockMode: false });
+    await expect(client.searchSchools("한세")).rejects.toMatchObject({
+      code: "NEIS_NOT_CONFIGURED",
+      status: 503,
+    });
+  });
+
+  it("provides deterministic mock data only in explicit mock mode", async () => {
+    const client = new NeisClient({ apiKey: "", mockMode: true });
     await expect(client.searchSchools("한세")).resolves.toHaveLength(1);
     const timetable = await client.getTodayTimetable(query, "2026-09-22");
     expect(timetable.school.name).toBe("한세사이버보안고등학교");
     expect(timetable.lessons[0]).toEqual({ period: 1, subject: "자료구조" });
+  });
+
+  it("keeps mock school searches separated by office", async () => {
+    const client = new NeisClient({ mockMode: true });
+    const all = await client.searchSchools("미래");
+    const busan = await client.searchSchools("미래", "C10");
+    expect(all.length).toBeGreaterThan(1);
+    expect(busan).toEqual([
+      expect.objectContaining({ officeCode: "C10", name: "부산미래중학교" }),
+    ]);
+  });
+
+  it("distinguishes an invalid API key logical response from no data", async () => {
+    const fetchImplementation: typeof fetch = vi.fn(async () =>
+      new Response(JSON.stringify({ RESULT: { CODE: "ERROR-290", MESSAGE: "인증키 오류" } })),
+    );
+    const client = new NeisClient({ apiKey: "invalid", fetchImplementation, maxAttempts: 1 });
+    await expect(client.searchSchools("테스트학교")).rejects.toMatchObject({
+      code: "NEIS_AUTH_ERROR",
+      status: 502,
+    });
+  });
+});
+
+describe("school search cache", () => {
+  it("does not collide between all-region, Seoul, and Busan searches", async () => {
+    vi.stubEnv("NEIS_API_KEY", "cache-test-key");
+    vi.stubEnv("NEIS_MOCK_MODE", "false");
+    const upstream = vi.fn(async (input: RequestInfo | URL) => {
+      const url = new URL(String(input));
+      const officeCode = url.searchParams.get("ATPT_OFCDC_SC_CODE") ?? "ALL";
+      return new Response(
+        JSON.stringify({
+          schoolInfo: [
+            { head: [{ RESULT: { CODE: "INFO-000", MESSAGE: "정상" } }] },
+            {
+              row: [{
+                ATPT_OFCDC_SC_CODE: officeCode === "ALL" ? "J10" : officeCode,
+                ATPT_OFCDC_SC_NM: `${officeCode} 교육청`,
+                SD_SCHUL_CODE: `${officeCode}-school`,
+                SCHUL_NM: "같은이름학교",
+                SCHUL_KND_SC_NM: "고등학교",
+              }],
+            },
+          ],
+        }),
+      );
+    });
+    vi.stubGlobal("fetch", upstream);
+
+    const [all, seoul, busan] = await Promise.all([
+      searchSchools("같은이름학교"),
+      searchSchools("같은이름학교", "B10"),
+      searchSchools("같은이름학교", "C10"),
+    ]);
+    const seoulAgain = await searchSchools("  같은이름학교  ", "B10");
+
+    expect(all[0]?.officeCode).toBe("J10");
+    expect(seoul[0]?.officeCode).toBe("B10");
+    expect(busan[0]?.officeCode).toBe("C10");
+    expect(seoulAgain[0]?.officeCode).toBe("B10");
+    expect(upstream).toHaveBeenCalledTimes(3);
   });
 });

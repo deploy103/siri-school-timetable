@@ -5,11 +5,12 @@
 - `NEIS_API_KEY`는 서버 런타임 환경변수로만 읽는다.
 - 이름에 `NEXT_PUBLIC_`을 사용하지 않으며 클라이언트 코드, 응답, URL, 로그에 포함하지 않는다.
 - `.env`와 로컬 환경 파일은 Git 및 Docker build context에서 제외한다.
-- Dockerfile에는 키를 `ARG`, `ENV`, `COPY`하지 않는다. Compose가 실행 시 주입한다.
+- Dockerfile에는 키를 `ARG`, `ENV`, `COPY`하지 않는다. Compose의 optional `.env` 파일이 실행 시에만 주입한다.
+- 키가 없을 때 Mock으로 자동 전환하지 않고 `NEIS_NOT_CONFIGURED` 오류를 반환해 운영 설정 누락을 숨기지 않는다.
 
 ## 입력과 외부 요청
 
-- 모든 쿼리는 Zod로 길이, 문자, 열거형, 숫자 범위를 검증한다.
+- 모든 쿼리는 Zod로 길이, 문자, 17개 교육청 코드 allowlist, 열거형, 숫자 범위를 검증한다.
 - 학교 종류가 허용된 NEIS 데이터셋 이름으로만 매핑된다.
 - 외부 주소는 코드에 정의된 NEIS HTTPS origin과 endpoint로 조합한다. 사용자 입력을 host나 path로 사용하지 않아 SSRF를 방지한다.
 - 외부 요청은 `AbortSignal` 기반 타임아웃과 짧고 제한된 재시도를 사용한다.

@@ -8,26 +8,37 @@ test("mobile-first setup, timetable, persistence, and Siri flow", async ({ page 
 
   await page.goto("/");
   await expect(page.getByRole("heading", { name: "내 학교를 알려주세요" })).toBeVisible();
+  await expect(page.getByLabel("지역", { exact: true })).toHaveValue("");
 
-  await page.getByLabel("학교 이름").fill("한세");
+  await page.getByLabel("지역", { exact: true }).selectOption("C10");
+  await page.getByLabel("학교 이름").fill("미래");
   await page.getByRole("button", { name: "검색" }).click();
-  await page.getByRole("button", { name: /한세사이버보안고등학교/ }).click();
-  await page.getByLabel("학년").selectOption("2");
-  await page.getByLabel("반").selectOption("1");
+  await expect(page.getByRole("button", { name: /부산미래중학교/ })).toContainText("부산광역시");
+  await page.getByRole("button", { name: /부산미래중학교/ }).click();
+  await page.getByLabel("학년", { exact: true }).selectOption("2");
+  await page.getByLabel("반", { exact: true }).fill("1");
   await page.getByRole("button", { name: "설정 저장하고 시간표 보기" }).click();
 
-  await expect(page.getByRole("heading", { name: "한세사이버보안고등학교" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "부산미래중학교" })).toBeVisible();
   await expect(page.getByText("자료구조", { exact: true })).toBeVisible();
   await expect(page.getByRole("listitem").first()).toContainText("1교시");
 
   await page.reload();
-  await expect(page.getByRole("heading", { name: "한세사이버보안고등학교" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "부산미래중학교" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "오늘 수업" })).toBeVisible();
+
+  await page.getByRole("button", { name: "설정 변경" }).click();
+  await expect(page.getByRole("heading", { name: "학교 설정 변경" })).toBeVisible();
+  await expect(page.getByLabel("지역", { exact: true })).toHaveValue("C10");
+  await page.getByLabel("학년", { exact: true }).selectOption("3");
+  await page.getByLabel("반", { exact: true }).fill("2");
+  await page.getByRole("button", { name: "설정 저장하고 시간표 보기" }).click();
+  await expect(page.getByText("3학년 2반")).toBeVisible();
 
   await page.getByRole("button", { name: "Siri 설정" }).click();
   const dialog = page.getByRole("dialog", { name: "Siri로 시간표 듣기" });
   await expect(dialog).toBeVisible();
-  await expect(dialog.getByLabel("내 시간표 주소")).toHaveValue(/\/api\/voice\/timetable\?.*officeCode=B10/);
+  await expect(dialog.getByLabel("내 시간표 주소")).toHaveValue(/\/api\/voice\/timetable\?.*officeCode=C10/);
   await expect(dialog).toContainText("URL 콘텐츠 가져오기");
   await expect(dialog).toContainText("텍스트 말하기");
   await page.keyboard.press("Escape");

@@ -11,8 +11,11 @@ export async function GET(request: Request): Promise<Response> {
 
   try {
     const params = new URL(request.url).searchParams;
-    const query = schoolSearchSchema.parse({ name: params.get("name") ?? undefined });
-    const schools = await searchSchools(query.name);
+    const query = schoolSearchSchema.parse({
+      officeCode: params.get("officeCode") ?? undefined,
+      name: params.get("name") ?? undefined,
+    });
+    const schools = await searchSchools(query.name, query.officeCode);
     return jsonResponse(
       { schools },
       { status: 200, headers: { "Cache-Control": "private, max-age=60" } },

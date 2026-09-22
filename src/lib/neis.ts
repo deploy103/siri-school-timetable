@@ -1,4 +1,5 @@
 import { MemoryCache } from "@/lib/cache";
+import type { EducationOfficeCode } from "@/lib/education-offices";
 import { AppError } from "@/lib/errors";
 import type { Lesson, School, SchoolKind, TimetableResponse } from "@/lib/types";
 import type { TimetableQuery } from "@/lib/schemas";
@@ -29,6 +30,33 @@ const MOCK_SCHOOLS: readonly School[] = [
     address: "서울특별시 구로구 새말로 73",
     region: "서울특별시교육청",
   },
+  {
+    officeCode: "C10",
+    schoolCode: "C100000001",
+    name: "부산미래중학교",
+    kind: "중학교",
+    address: "부산광역시 부산진구 미래로 1",
+    region: "부산광역시교육청",
+    locality: "부산광역시",
+  },
+  {
+    officeCode: "J10",
+    schoolCode: "J100000001",
+    name: "경기미래고등학교",
+    kind: "고등학교",
+    address: "경기도 수원시 미래로 1",
+    region: "경기도교육청",
+    locality: "경기도",
+  },
+  {
+    officeCode: "T10",
+    schoolCode: "T100000001",
+    name: "제주미래초등학교",
+    kind: "초등학교",
+    address: "제주특별자치도 제주시 미래로 1",
+    region: "제주특별자치도교육청",
+    locality: "제주특별자치도",
+  },
 ] as const;
 
 const MOCK_LESSONS: readonly Lesson[] = [
@@ -40,6 +68,7 @@ const MOCK_LESSONS: readonly Lesson[] = [
 
 const schoolCache = new MemoryCache<School[]>(200);
 const timetableCache = new MemoryCache<TimetableResponse>(500);
+const MAX_RESPONSE_BYTES = 2_000_000;
 
 export function timetableDataset(kind: SchoolKind): string {
   return DATASETS[kind];
@@ -77,6 +106,31 @@ function responseResult(payload: JsonRecord, dataset: unknown[]): { code: string
   return undefined;
 }
 
+function throwForNeisResult(code: string): never {
+  if (code === "ERROR-290" || code === "INFO-300") {
+    throw new AppError(
+      "NEIS_AUTH_ERROR",
+      502,
+      "NEIS API 인증키가 유효하지 않습니다. 서버 설정을 확인해 주세요.",
+    );
+  }
+  if (code === "ERROR-337") {
+    throw new AppError(
+      "NEIS_QUOTA_EXCEEDED",
+      503,
+      "교육정보 서비스의 일일 호출 한도를 초과했습니다. 잠시 후 다시 시도해 주세요.",
+    );
+  }
+  if (code === "ERROR-500" || code === "ERROR-600" || code === "ERROR-601") {
+    throw new AppError(
+      "NEIS_UNAVAILABLE",
+      503,
+      "교육정보 서비스에 일시적으로 연결할 수 없습니다.",
+    );
+  }
+  throw new AppError("NEIS_ERROR", 502, "교육정보 서비스가 요청을 처리하지 못했습니다.");
+}
+
 export function extractNeisRows(payload: unknown, datasetName: string): JsonRecord[] {
   if (!isRecord(payload)) {
     throw new AppError("NEIS_ERROR", 502, "교육정보 응답 형식이 올바르지 않습니다.");
@@ -88,7 +142,7 @@ export function extractNeisRows(payload: unknown, datasetName: string): JsonReco
 
   if (result?.code === "INFO-200") return [];
   if (result && result.code !== "INFO-000" && result.code !== "INFO-100") {
-    throw new AppError("NEIS_ERROR", 502, "교육정보 서비스가 요청을 처리하지 못했습니다.");
+    throwForNeisResult(result.code);
   }
   if (!Array.isArray(datasetValue)) {
     throw new AppError("NEIS_ERROR", 502, "교육정보 응답 형식이 올바르지 않습니다.");
@@ -125,6 +179,9 @@ export function parseSchools(payload: unknown): School[] {
       kind,
       address: stringField(row, "ORG_RDNMA"),
       region: stringField(row, "ATPT_OFCDC_SC_NM"),
+      ...(stringField(row, "LCTN_SC_NM")
+        ? { locality: stringField(row, "LCTN_SC_NM") }
+        : {}),
     };
     unique.set(`${officeCode}:${schoolCode}`, school);
   }
@@ -191,6 +248,7 @@ function matchesTimetableRequest(row: JsonRecord, query: TimetableQuery, date: s
 
 export interface NeisClientOptions {
   apiKey?: string;
+  mockMode?: boolean;
   timeoutMs?: number;
   maxAttempts?: number;
   retryDelayMs?: number;
@@ -203,27 +261,40 @@ export class NeisClient {
   private readonly maxAttempts: number;
   private readonly retryDelayMs: number;
   private readonly fetchImplementation: typeof fetch;
+  private readonly mockMode: boolean;
 
   constructor(options: NeisClientOptions = {}) {
     this.apiKey = (options.apiKey ?? process.env.NEIS_API_KEY ?? "").trim();
+    this.mockMode = options.mockMode ?? process.env.NEIS_MOCK_MODE === "true";
     this.timeoutMs = Math.max(1, Math.min(options.timeoutMs ?? 5_000, 15_000));
     this.maxAttempts = Math.max(1, Math.min(options.maxAttempts ?? 2, 3));
     this.retryDelayMs = Math.max(0, Math.min(options.retryDelayMs ?? 120, 1_000));
     this.fetchImplementation = options.fetchImplementation ?? fetch;
+    if (this.mockMode && process.env.NODE_ENV === "production") {
+      logProductionMockMode();
+    }
   }
 
   get isMockMode(): boolean {
-    return this.apiKey.length === 0 || process.env.NEIS_MOCK_MODE === "true";
+    return this.mockMode;
   }
 
-  async searchSchools(name: string): Promise<School[]> {
+  async searchSchools(name: string, officeCode?: EducationOfficeCode): Promise<School[]> {
     if (this.isMockMode) {
       const needle = name.replace(/\s+/g, "").toLocaleLowerCase("ko-KR");
       return MOCK_SCHOOLS.filter((school) =>
+        (!officeCode || school.officeCode === officeCode) &&
         school.name.replace(/\s+/g, "").toLocaleLowerCase("ko-KR").includes(needle),
       ).map((school) => ({ ...school }));
     }
-    const payload = await this.request("schoolInfo", { SCHUL_NM: name, pIndex: "1", pSize: "50" });
+    this.assertConfigured();
+    const parameters: Record<string, string> = {
+      SCHUL_NM: name,
+      pIndex: "1",
+      pSize: "100",
+    };
+    if (officeCode) parameters.ATPT_OFCDC_SC_CODE = officeCode;
+    const payload = await this.request("schoolInfo", parameters);
     return parseSchools(payload);
   }
 
@@ -246,6 +317,7 @@ export class NeisClient {
         lessons: MOCK_LESSONS.map((lesson) => ({ ...lesson })),
       };
     }
+    this.assertConfigured();
 
     const payload = await this.request(dataset, {
       ATPT_OFCDC_SC_CODE: query.officeCode,
@@ -294,6 +366,16 @@ export class NeisClient {
     };
   }
 
+  private assertConfigured(): void {
+    if (this.apiKey.length === 0) {
+      throw new AppError(
+        "NEIS_NOT_CONFIGURED",
+        503,
+        "NEIS API 인증키가 서버에 설정되지 않았습니다.",
+      );
+    }
+  }
+
   private async request(dataset: string, parameters: Readonly<Record<string, string>>): Promise<unknown> {
     if (!Object.values(DATASETS).includes(dataset) && dataset !== "schoolInfo") {
       throw new AppError("INVALID_INPUT", 400, "지원하지 않는 교육정보 요청입니다.");
@@ -306,7 +388,15 @@ export class NeisClient {
     let lastError: unknown;
     for (let attempt = 1; attempt <= this.maxAttempts; attempt += 1) {
       try {
-        return await this.fetchJson(url);
+        const payload = await this.fetchJson(url);
+        if (isRecord(payload)) {
+          const datasetValue = payload[dataset];
+          const result = responseResult(payload, Array.isArray(datasetValue) ? datasetValue : []);
+          if (result && result.code !== "INFO-000" && result.code !== "INFO-100" && result.code !== "INFO-200") {
+            throwForNeisResult(result.code);
+          }
+        }
+        return payload;
       } catch (error) {
         lastError = error;
         const retryable =
@@ -326,7 +416,6 @@ export class NeisClient {
       const response = await this.fetchImplementation(url, {
         method: "GET",
         signal: controller.signal,
-        headers: { Accept: "application/json" },
         cache: "no-store",
       });
       if (response.status === 429 || response.status >= 500) {
@@ -336,7 +425,7 @@ export class NeisClient {
         throw new AppError("NEIS_ERROR", 502, "교육정보 서비스가 요청을 처리하지 못했습니다.");
       }
       const text = await response.text();
-      if (text.length > 2_000_000) {
+      if (Buffer.byteLength(text, "utf8") > MAX_RESPONSE_BYTES) {
         throw new AppError("NEIS_ERROR", 502, "교육정보 응답이 허용된 크기를 초과했습니다.");
       }
       try {
@@ -358,9 +447,38 @@ export class NeisClient {
   }
 }
 
-export async function searchSchools(name: string): Promise<School[]> {
-  const key = name.trim().replace(/\s+/g, " ").toLocaleLowerCase("ko-KR");
-  return schoolCache.getOrLoad(key, 10 * 60_000, () => new NeisClient().searchSchools(name));
+let productionMockModeLogged = false;
+
+function logProductionMockMode(): void {
+  if (productionMockModeLogged) return;
+  productionMockModeLogged = true;
+  console.warn("NEIS mock mode enabled");
+}
+
+export interface NeisRuntimeStatus {
+  configured: boolean;
+  mode: "live" | "mock" | "unconfigured";
+}
+
+export function getNeisRuntimeStatus(): NeisRuntimeStatus {
+  const hasApiKey = Boolean(process.env.NEIS_API_KEY?.trim());
+  const mock = process.env.NEIS_MOCK_MODE === "true";
+  if (mock && process.env.NODE_ENV === "production") logProductionMockMode();
+  return {
+    configured: mock ? false : hasApiKey,
+    mode: mock ? "mock" : hasApiKey ? "live" : "unconfigured",
+  };
+}
+
+export async function searchSchools(
+  name: string,
+  officeCode?: EducationOfficeCode,
+): Promise<School[]> {
+  const normalizedName = name.trim().replace(/\s+/g, " ").toLocaleLowerCase("ko-KR");
+  const key = `${officeCode ?? "ALL"}:${normalizedName}`;
+  return schoolCache.getOrLoad(key, 10 * 60_000, () =>
+    new NeisClient().searchSchools(name, officeCode),
+  );
 }
 
 export async function getTodayTimetable(query: TimetableQuery, date: string): Promise<TimetableResponse> {

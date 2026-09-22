@@ -3,6 +3,9 @@ export type AppErrorCode =
   | "RATE_LIMITED"
   | "NEIS_TIMEOUT"
   | "NEIS_UNAVAILABLE"
+  | "NEIS_NOT_CONFIGURED"
+  | "NEIS_AUTH_ERROR"
+  | "NEIS_QUOTA_EXCEEDED"
   | "NEIS_ERROR"
   | "NOT_FOUND"
   | "INTERNAL_ERROR";

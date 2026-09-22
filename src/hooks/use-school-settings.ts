@@ -1,31 +1,42 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { isEducationOfficeCode } from "@/lib/education-offices";
 import { SCHOOL_KINDS, type SchoolSettings } from "@/types/client";
 
 const STORAGE_KEY = "time-siri.school-settings.v1";
 
-function isSchoolSettings(value: unknown): value is SchoolSettings {
-  if (!value || typeof value !== "object") return false;
-  const candidate = value as Partial<SchoolSettings>;
+function normalizeSchoolSettings(value: unknown): SchoolSettings | null {
+  if (!value || typeof value !== "object") return null;
+  const candidate = value as Partial<SchoolSettings> & { className?: unknown };
   const school = candidate.school;
   const kind = school?.kind;
   const maxGrade = kind === "초등학교" || kind === "특수학교" ? 6 : 3;
-  return Boolean(
+  const storedClassName = candidate.className;
+  const className = typeof storedClassName === "number" && Number.isInteger(storedClassName)
+    ? String(storedClassName)
+    : typeof storedClassName === "string"
+      ? storedClassName.trim()
+      : "";
+  const valid = Boolean(
     school &&
       typeof school.officeCode === "string" &&
+      isEducationOfficeCode(school.officeCode) &&
       typeof school.schoolCode === "string" &&
       typeof school.name === "string" &&
       SCHOOL_KINDS.some((item) => item === kind) &&
       typeof school.address === "string" &&
       typeof school.region === "string" &&
+      (school.locality === undefined || typeof school.locality === "string") &&
       Number.isInteger(candidate.grade) &&
       Number(candidate.grade) >= 1 &&
       Number(candidate.grade) <= maxGrade &&
-      Number.isInteger(candidate.className) &&
-      Number(candidate.className) >= 1 &&
-      Number(candidate.className) <= 20,
+      className.length >= 1 &&
+      className.length <= 20 &&
+      !/[\u0000-\u001f\u007f]/.test(className),
   );
+  if (!valid || !school || !candidate.grade) return null;
+  return { school, grade: candidate.grade, className } as SchoolSettings;
 }
 
 export function useSchoolSettings() {
@@ -38,7 +49,8 @@ export function useSchoolSettings() {
         const stored = window.localStorage.getItem(STORAGE_KEY);
         if (stored) {
           const parsed: unknown = JSON.parse(stored);
-          if (isSchoolSettings(parsed)) setSettings(parsed);
+          const normalized = normalizeSchoolSettings(parsed);
+          if (normalized) setSettings(normalized);
           else window.localStorage.removeItem(STORAGE_KEY);
         }
       } catch {

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { getKstDate, toNeisDate } from "@/lib/date";
 import { MemoryCache } from "@/lib/cache";
+import { EDUCATION_OFFICES, isEducationOfficeCode } from "@/lib/education-offices";
 import { clientIdentifier, MemoryRateLimiter } from "@/lib/rate-limit";
 import { schoolSearchSchema, timetableQuerySchema } from "@/lib/schemas";
 import { timetableToSpeech, voiceErrorMessage } from "@/lib/voice";
@@ -26,19 +27,32 @@ describe("input validation", () => {
   };
 
   it("normalizes valid timetable query strings", () => {
-    expect(timetableQuerySchema.parse(valid)).toEqual({ ...valid, grade: 2, className: 1 });
+    expect(timetableQuerySchema.parse(valid)).toEqual({ ...valid, grade: 2 });
     expect(
       timetableQuerySchema.parse({ ...valid, kind: "특수학교", grade: "6" }),
     ).toMatchObject({ kind: "특수학교", grade: 6 });
   });
 
+  it("keeps all 17 education offices in one validated allowlist", () => {
+    expect(EDUCATION_OFFICES).toHaveLength(17);
+    expect(new Set(EDUCATION_OFFICES.map(({ code }) => code)).size).toBe(17);
+    expect(isEducationOfficeCode("B10")).toBe(true);
+    expect(isEducationOfficeCode("T10")).toBe(true);
+    expect(isEducationOfficeCode("A10")).toBe(false);
+  });
+
   it.each([
     [{ ...valid, officeCode: "https://evil.test" }, "external URL"],
     [{ ...valid, grade: "4" }, "high-school grade"],
-    [{ ...valid, className: "21" }, "class range"],
+    [{ ...valid, className: "가".repeat(21) }, "class length"],
+    [{ ...valid, className: "1\n2" }, "class control character"],
     [{ ...valid, kind: "대학교" }, "school kind"],
   ])("rejects invalid %s", (input) => {
     expect(timetableQuerySchema.safeParse(input).success).toBe(false);
+  });
+
+  it("accepts named classes used by some schools", () => {
+    expect(timetableQuerySchema.parse({ ...valid, className: " 난초 " }).className).toBe("난초");
   });
 
   it("trims school names and rejects missing, short, or oversized input", () => {
@@ -47,6 +61,15 @@ describe("input validation", () => {
     expect(schoolSearchSchema.safeParse({ name: "학" }).success).toBe(false);
     expect(schoolSearchSchema.safeParse({ name: "가".repeat(51) }).success).toBe(false);
   });
+
+  it("accepts an optional allowlisted office for school search", () => {
+    expect(schoolSearchSchema.parse({ name: "미래학교" })).toEqual({ name: "미래학교" });
+    expect(schoolSearchSchema.parse({ name: "미래학교", officeCode: "C10" })).toEqual({
+      name: "미래학교",
+      officeCode: "C10",
+    });
+    expect(schoolSearchSchema.safeParse({ name: "미래학교", officeCode: "ZZZ" }).success).toBe(false);
+  });
 });
 
 describe("speech generation", () => {
@@ -54,7 +77,7 @@ describe("speech generation", () => {
     date: "2026-09-22",
     school: { name: "테스트고등학교", kind: "고등학교" as const },
     grade: 2,
-    className: 1,
+    className: "1",
   };
 
   it("reads lessons in period order", () => {

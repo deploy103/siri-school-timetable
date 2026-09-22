@@ -15,14 +15,14 @@ const settings: SchoolSettings = {
     address: "서울특별시 중구 테스트로 2",
   },
   grade: 2,
-  className: 3,
+  className: "3",
 };
 
 const timetable = {
   date: "2026-09-22",
   school: { name: "테스트중학교", kind: "중학교" },
   grade: 2,
-  className: 3,
+  className: "3",
   lessons: [
     { period: 2, subject: "영어" },
     { period: 1, subject: "수학" },
@@ -34,7 +34,7 @@ describe("HomePage", () => {
     window.localStorage.setItem(STORAGE_KEY, JSON.stringify(settings));
   });
 
-  it("restores saved settings and renders today's timetable in period order", async () => {
+  it("restores the existing v1 settings and renders today's timetable in period order", async () => {
     const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify(timetable), { status: 200 }));
     vi.stubGlobal("fetch", fetchMock);
     render(<HomePage />);
@@ -49,6 +49,15 @@ describe("HomePage", () => {
       "/api/timetable/today?officeCode=B10&schoolCode=7011234&kind=%EC%A4%91%ED%95%99%EA%B5%90&grade=2&className=3",
       { cache: "no-store" },
     );
+  });
+
+  it("migrates the numeric class value stored by the original v1 schema", async () => {
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify({ ...settings, className: 3 }));
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify(timetable), { status: 200 })));
+    render(<HomePage />);
+
+    expect(await screen.findByRole("heading", { name: "테스트중학교" })).toBeVisible();
+    expect(screen.getByText("2학년 3반")).toBeVisible();
   });
 
   it("opens settings editing and can cancel without losing the saved settings", async () => {
@@ -74,13 +83,16 @@ describe("HomePage", () => {
     vi.stubGlobal("fetch", fetchMock);
     render(<HomePage />);
 
+    await user.selectOptions(await screen.findByLabelText("지역"), "B10");
     await user.type(await screen.findByLabelText("학교 이름"), "새학교");
     await user.click(screen.getByRole("button", { name: "검색" }));
     await user.click(await screen.findByRole("button", { name: /새학교/ }));
     await user.selectOptions(screen.getByLabelText("학년"), "3");
-    await user.selectOptions(screen.getByLabelText("반"), "4");
+    await user.clear(screen.getByLabelText("반"));
+    await user.type(screen.getByLabelText("반"), "4");
     await user.click(screen.getByRole("button", { name: "설정 저장하고 시간표 보기" }));
 
-    await waitFor(() => expect(JSON.parse(window.localStorage.getItem(STORAGE_KEY) ?? "null")).toEqual({ school, grade: 3, className: 4 }));
+    await waitFor(() => expect(JSON.parse(window.localStorage.getItem(STORAGE_KEY) ?? "null")).toEqual({ school, grade: 3, className: "4" }));
+    expect(fetchMock).toHaveBeenNthCalledWith(1, "/api/schools?name=%EC%83%88%ED%95%99%EA%B5%90&officeCode=B10");
   });
 });

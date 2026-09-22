@@ -14,7 +14,7 @@ const settings: SchoolSettings = {
     address: "서울특별시 강남구 테스트로 3",
   },
   grade: 4,
-  className: 2,
+  className: "2",
 };
 
 function jsonResponse(body: unknown, status = 200) {
@@ -33,7 +33,7 @@ describe("TimetableView", () => {
       date: "2026-09-22",
       school: { name: settings.school.name, kind: settings.school.kind },
       grade: 4,
-      className: 2,
+      className: "2",
       lessons: [],
     }));
     expect(await screen.findByText("오늘 등록된 시간표가 없습니다.")).toBeVisible();
@@ -48,7 +48,7 @@ describe("TimetableView", () => {
         date: "2026-09-22",
         school: { name: settings.school.name, kind: settings.school.kind },
         grade: 4,
-        className: 2,
+        className: "2",
         lessons: [{ period: 1, subject: "국어" }],
       }));
     vi.stubGlobal("fetch", fetchMock);
@@ -68,7 +68,7 @@ describe("TimetableView", () => {
       date: "2026-09-22",
       school: { name: settings.school.name, kind: settings.school.kind },
       grade: 4,
-      className: 2,
+      className: "2",
       lessons: [{ period: 1, subject: "국어" }],
     })));
     render(<TimetableView settings={settings} onChangeSettings={vi.fn()} />);

@@ -41,7 +41,7 @@ cp .env.example .env
 pnpm dev
 ```
 
-`http://localhost:3000`을 엽니다. 키 없이 실행하면 결정적인 Mock 학교/시간표를 사용하므로 전체 화면과 Siri 흐름을 테스트할 수 있습니다. 실제 데이터를 확인하려면 `.env`의 키를 설정합니다.
+`http://localhost:3000`을 엽니다. 실제 데이터를 확인하려면 `.env`에 키를 설정합니다. 키 없이 UI와 Siri 흐름을 개발할 때는 `NEIS_MOCK_MODE=true`를 명시해야 합니다.
 
 ## 환경변수
 
@@ -52,11 +52,24 @@ TRUST_PROXY_HEADERS=false
 ```
 
 - `NEIS_API_KEY`: [NEIS 교육정보 개방 포털](https://open.neis.go.kr/)에서 발급한다. 서버 전용이며 `NEXT_PUBLIC_` 접두사를 붙이지 않는다.
-- `NEIS_MOCK_MODE=true`: 키가 있더라도 외부 호출 없이 Mock 응답을 사용한다.
+- `NEIS_MOCK_MODE=true`: 키 유무와 관계없이 외부 호출 없이 결정적 Mock 응답을 사용한다. Mock은 이 값을 명시한 경우에만 활성화된다.
 - `TRUST_PROXY_HEADERS=true`: 전달 헤더를 덮어쓰는 신뢰 가능한 reverse proxy 뒤에서만 설정한다. 클라이언트 IP별 Rate Limit에 사용된다.
-- 키가 비어 있으면 개발 가능성을 위해 자동으로 Mock 모드가 된다.
+
+NEIS 동작 모드는 다음 세 가지다.
+
+| 상태 | 조건 | `/api/health` | 데이터 동작 |
+| --- | --- | --- | --- |
+| Live | 키 있음, Mock 꺼짐 | `status: ok`, `mode: live` | 실제 NEIS 호출 |
+| Mock | `NEIS_MOCK_MODE=true` | `status: ok`, `mode: mock` | 개발용 고정 데이터 |
+| Unconfigured | 키 없음, Mock 꺼짐 | `status: degraded`, `mode: unconfigured` | API가 `NEIS_NOT_CONFIGURED`(503) 반환 |
 
 `.env`는 Git과 Docker build context에서 제외된다. 실제 키를 `.env.example`에 기록하지 않는다.
+
+상태 응답에는 키가 포함되지 않는다.
+
+```bash
+curl http://localhost:3000/api/health
+```
 
 ## 품질 검증
 
@@ -90,6 +103,16 @@ docker compose exec siri-school-timetable wget -qO- http://127.0.0.1:3000/api/he
 
 같은 network의 reverse proxy에서는 `http://siri-school-timetable:3000`으로 접근합니다. 종료 명령은 `docker compose down`입니다. 이미지는 multi-stage standalone 빌드이고, 최종 컨테이너는 비루트·읽기 전용 파일 시스템으로 실행됩니다. API 키는 이미지가 아니라 컨테이너 실행 시 주입됩니다.
 
+`.env`가 반영되지 않는 것 같다면 컨테이너를 다시 생성한 뒤 실제 키 값 대신 존재 여부만 확인합니다.
+
+```bash
+docker compose up -d --force-recreate
+docker compose exec siri-school-timetable \
+  node -e 'console.log({hasNeisKey:Boolean(process.env.NEIS_API_KEY),mock:process.env.NEIS_MOCK_MODE})'
+```
+
+`hasNeisKey: false`라면 프로젝트 디렉터리의 `.env` 위치와 이름을 확인합니다. 운영 Compose의 `.env` 파일은 optional이므로 파일이 없어도 컨테이너는 시작되지만, 애플리케이션은 Live나 Mock으로 위장하지 않고 Unconfigured 상태를 보고합니다.
+
 ## Siri 설정
 
 웹에서 학교 설정을 저장한 뒤 **Siri 설정**을 열고 URL을 복사한다. iPhone 단축어 앱에서 다음 세 동작을 순서대로 만든다.
@@ -107,11 +130,12 @@ URL
 ```text
 GET /api/health
 GET /api/schools?name=학교명
+GET /api/schools?officeCode=B10&name=학교명
 GET /api/timetable/today?officeCode=...&schoolCode=...&kind=...&grade=2&className=1
 GET /api/voice/timetable?officeCode=...&schoolCode=...&kind=...&grade=2&className=1
 ```
 
-학교·시간표 API는 JSON을 반환한다. 음성 API는 단축어가 그대로 말할 수 있는 `text/plain; charset=utf-8` 문장을 반환한다.
+학교 설정 화면에서 17개 시도교육청 또는 전체 지역을 선택한 뒤 학교명을 검색합니다. 지역 검색은 `officeCode`를 NEIS `ATPT_OFCDC_SC_CODE`로 전달하며, 전체 지역 검색은 해당 파라미터를 생략합니다. 동명 학교는 지역·주소·학교 종류를 함께 표시하고 개별 결과를 그대로 유지합니다. 학교·시간표 API는 JSON을 반환하고, 음성 API는 단축어가 그대로 말할 수 있는 `text/plain; charset=utf-8` 문장을 반환합니다.
 
 ## 디렉터리 구조
 
@@ -140,8 +164,10 @@ docker-compose.yml    로컬/단일 서버 실행 정의
 - `400`: 학교 설정 형식과 학년·반 범위를 확인한다.
 - `429`: `Retry-After` 이후 다시 요청한다.
 - `502/504`: NEIS 상태와 서버 네트워크를 확인하고 잠시 후 다시 시도한다.
-- 검색/시간표가 계속 Mock으로 보이면 `NEIS_API_KEY`가 컨테이너에 전달되었는지, `NEIS_MOCK_MODE`가 `false`인지 확인한다.
-- `docker compose logs --tail=100 web`과 `/api/health`로 애플리케이션 상태를 확인한다. 로그에는 키나 upstream 원문을 남기지 않는다.
+- `503 NEIS_NOT_CONFIGURED`: `NEIS_API_KEY`가 컨테이너에 전달되었는지 확인하거나 개발 환경에서만 `NEIS_MOCK_MODE=true`를 명시한다.
+- 인증 오류: 키의 유효성과 NEIS 포털 상태를 확인한다. 검색 결과 없음과 인증 실패는 서로 다른 오류로 처리된다.
+- 검색/시간표가 Mock으로 보이면 `NEIS_MOCK_MODE`가 의도치 않게 `true`인지 확인한다.
+- `docker compose logs --tail=100 siri-school-timetable`과 `/api/health`로 애플리케이션 상태를 확인한다. 로그에는 키나 upstream 원문을 남기지 않는다.
 
 설계와 운영 세부사항은 [아키텍처](docs/ARCHITECTURE.md), [공식 문서 조사](docs/RESEARCH.md), [보안](docs/SECURITY.md)을 참고한다.
 

@@ -3,13 +3,13 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+    env_file:
+      - path: .env
+        required: false
     expose:
       - "3000"
     environment:
       NODE_ENV: production
-      NEIS_API_KEY: "${NEIS_API_KEY:-}"
-      NEIS_MOCK_MODE: "${NEIS_MOCK_MODE:-false}"
-      TRUST_PROXY_HEADERS: "${TRUST_PROXY_HEADERS:-false}"
     restart: unless-stopped
     read_only: true
     tmpfs:

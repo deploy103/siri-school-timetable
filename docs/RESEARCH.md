@@ -10,6 +10,7 @@
 - 시간표 API에서 실제 필수인 신청 인자는 `ATPT_OFCDC_SC_CODE`와 `SD_SCHUL_CODE`이다. 오늘 시간표에는 이 둘과 KST 기준 `ALL_TI_YMD=yyyyMMdd`, `GRADE`, `CLASS_NM`을 보낸다.
 - `schoolInfo`의 검색 필터는 공식 메타데이터상 모두 선택 사항이다. 이름 검색에는 `SCHUL_NM`을 쓰고, 결과의 교육청, 학교 종류, 시도와 도로명 주소를 함께 표시해야 동명 학교를 구분할 수 있다.
 - NEIS의 업무상 성공/실패는 HTTP 상태만으로 판정할 수 없다. 정상 목록의 `head[].RESULT`와, 빈 결과·오류 때 최상위에 오는 `RESULT`를 모두 해석해야 한다. 확인한 논리 오류 응답은 HTTP 200이었다.
+- 17개 시도교육청 코드는 `B10`~`T10` 사이의 연속 번호가 아니다(`L10`, `O10` 없음). 2026-09-22 `schoolInfo` 실호출에서 아래 17개 코드가 모두 `INFO-000`으로 확인됐다. 교육청의 공식 이름은 바뀔 수 있으므로 코드는 allowlist로, 화면용 짧은 지역명은 별도 표시값으로 관리하고 현재 공식명은 API 응답을 우선한다.
 - 고등학교 API는 `GRADE + CLASS_NM` 필터를 공식 지원한다. 그러나 응답에는 계열·학과·강의실도 존재하므로 선택수업 등에서 같은 교시가 여러 행으로 나오는 경우 학생 개인의 수업을 이 API만으로 확정할 수 없다.
 - 웹사이트가 Siri 명령을 자동 등록할 수는 없다. MVP는 사용자가 Apple 단축어 앱에서 `URL → URL 콘텐츠 가져오기 → 텍스트 말하기`를 구성하고 단축어 이름으로 Siri를 호출하는 방식이 공식 기능과 맞는다.
 - 공용 단축어는 제작자가 실제 단축어 앱에서 만든 iCloud 링크로 공유할 수 있다. 서버가 임의의 `icloud.com/shortcuts/...` 링크나 서명되지 않은 단축어 파일을 만들어서는 안 된다.
@@ -89,6 +90,32 @@
 
 학교 이름은 유일키가 아니다. 선택 상태에는 최소한 `ATPT_OFCDC_SC_CODE + SD_SCHUL_CODE + SCHUL_NM + SCHUL_KND_SC_NM`을 함께 보관한다.
 
+#### 1.4.1 17개 시도교육청 코드 실호출 검증
+
+공식 `schoolInfo`에 각 `ATPT_OFCDC_SC_CODE`를 하나씩 보내고 `head.RESULT=INFO-000`, 첫 행의 `ATPT_OFCDC_SC_NM`과 `LCTN_SC_NM`을 확인했다. 이 표의 **현재 공식 응답명**은 포털의 고정 코드표를 옮긴 것이 아니라 2026-09-22 공식 API가 실제 반환한 값이다.
+
+| 코드 | UI용 짧은 이름 | 현재 공식 응답명 (`ATPT_OFCDC_SC_NM`) | 현재 소재 시도 (`LCTN_SC_NM`) |
+| --- | --- | --- | --- |
+| `B10` | 서울 | 서울특별시교육청 | 서울특별시 |
+| `C10` | 부산 | 부산광역시교육청 | 부산광역시 |
+| `D10` | 대구 | 대구광역시교육청 | 대구광역시 |
+| `E10` | 인천 | 인천광역시교육청 | 인천광역시 |
+| `F10` | 광주 | 전남광주통합특별시교육청(광주) | 전남광주통합특별시(광주) |
+| `G10` | 대전 | 대전광역시교육청 | 대전광역시 |
+| `H10` | 울산 | 울산광역시교육청 | 울산광역시 |
+| `I10` | 세종 | 세종특별자치시교육청 | 세종특별자치시 |
+| `J10` | 경기 | 경기도교육청 | 경기도 |
+| `K10` | 강원 | 강원특별자치도교육청 | 강원특별자치도 |
+| `M10` | 충북 | 충청북도교육청 | 충청북도 |
+| `N10` | 충남 | 충청남도교육청 | 충청남도 |
+| `P10` | 전북 | 전북특별자치도교육청 | 전북특별자치도 |
+| `Q10` | 전남 | 전남광주통합특별시교육청(전남) | 전남광주통합특별시(전남) |
+| `R10` | 경북 | 경상북도교육청 | 경상북도 |
+| `S10` | 경남 | 경상남도교육청 | 경상남도 |
+| `T10` | 제주 | 제주특별자치도교육청 | 제주특별자치도 |
+
+따라서 클라이언트 선택지는 익숙한 짧은 이름(`광주`, `전남` 등)을 안정적으로 제공하되, `서울특별시교육청`, `광주광역시교육청` 같은 과거의 공식명을 애플리케이션 진실 원천으로 고정하면 안 된다. 검색 결과에는 각 행에서 받은 현재 `ATPT_OFCDC_SC_NM`, `LCTN_SC_NM`, `ORG_RDNMA`를 사용한다. 이 방식은 명칭 변경과 동명 학교를 모두 견딘다.
+
 ### 1.5 시간표 신청 인자
 
 `Y`는 공식 메타데이터의 필수 항목이며, 나머지는 선택 항목이다. 날짜 문자열은 공식 예시와 응답 모두 하이픈 없는 `yyyyMMdd`이다.
@@ -121,7 +148,7 @@ GRADE=<사용자 학년>
 CLASS_NM=<사용자 반>
 ```
 
-단일 날짜에는 `ALL_TI_YMD`를 우선한다. 범위 조회가 필요할 때만 `TI_FROM_YMD`와 `TI_TO_YMD`를 함께 사용한다. `CLASS_NM`은 숫자형으로 가정할 수 없는 원천 문자열이지만, 이 서비스의 UI는 1~20의 검증된 숫자 반을 문자열로 전달한다.
+단일 날짜에는 `ALL_TI_YMD`를 우선한다. 범위 조회가 필요할 때만 `TI_FROM_YMD`와 `TI_TO_YMD`를 함께 사용한다. `CLASS_NM`은 숫자형으로 가정할 수 없는 원천 문자열이다. 실제 2026-09-22 `elsTimetable` 응답에서 경기초등학교 1학년의 `CLASS_NM="난초"`를 확인했다. 따라서 전국 지원 UI가 반을 1~20 숫자로만 제한하면 일부 학교를 누락한다. 학급정보 API로 가능한 반을 조회해 고르게 하거나, 최소한 길이와 허용문자를 검증한 짧은 문자열 반을 받을 수 있어야 한다.
 
 ### 1.6 시간표 출력 필드
 
@@ -186,6 +213,8 @@ GRADE, CLASS_NM, PERIO, ITRT_CNTNT, LOAD_DTM
 
 HTML 오류 페이지, JSON 파싱 실패, 네트워크 실패와 timeout은 NEIS 논리 코드와 별도의 upstream 장애로 취급한다.
 
+2026-09-22 Node.js 실호출에서는 NEIS가 `Type=json` 쿼리와 함께 `Accept: application/json` 요청 헤더를 받으면 HTTP 500 HTML을 반환하고, 같은 URL에서 해당 헤더를 생략하면 정상 JSON을 반환하는 호환성 문제가 확인됐다. 따라서 응답 형식은 공식 `Type=json` 쿼리로만 지정하고 `Accept` 헤더는 강제로 추가하지 않는다. 애플리케이션의 제한된 `MemoryCache`와 Next.js `cache: "no-store"` 정책은 그대로 유지한다.
+
 ### 1.8 공식 메시지 코드
 
 다섯 데이터셋의 공식 메타데이터에 같은 메시지 목록이 게시되어 있다.
@@ -207,6 +236,20 @@ HTML 오류 페이지, JSON 파싱 실패, 네트워크 실패와 timeout은 NEI
 | `ERROR-601` | SQL 문장 오류 입니다. 지속적으로 발생시 홈페이지로 문의(Q&A) 바랍니다. | upstream 장애 |
 
 메시지 문자열 비교가 아니라 코드를 기준으로 처리한다. 서버/DB 계열 재시도는 timeout을 포함해 짧고 제한적으로 수행하고, `INFO-200`, 인증키 오류, 요청 오류는 재시도하지 않는다.
+
+#### 1.8.1 게시 코드와 실호출 재현 범위
+
+공식 메타데이터가 위 전체 코드 목록의 기준이다. 별도로 2026-09-22 sample 호출로 아래 상태를 재현했다.
+
+| 요청 | 실제 논리 코드 | HTTP/Content-Type |
+| --- | --- | --- |
+| 유효한 `schoolInfo` 검색 | `INFO-000` (`head[].RESULT`) | `200`, `application/json;charset=UTF-8` |
+| 존재하지 않는 학교명 또는 미래 시간표 | `INFO-200` (최상위 `RESULT`) | `200`, `application/json;charset=UTF-8` |
+| 명백히 잘못된 `KEY` | `ERROR-290` (최상위 `RESULT`) | `200`, `application/json;charset=UTF-8` |
+| 학교·교육청 필수값 없는 `hisTimetable` | `ERROR-300` (최상위 `RESULT`) | `200`, `application/json;charset=UTF-8` |
+| 존재하지 않는 리소스 경로 | `ERROR-310` (최상위 `RESULT`) | `200`, `application/json;charset=UTF-8` |
+
+`ERROR-333`, `ERROR-336`, `ERROR-337`, `ERROR-500`, `ERROR-600`, `ERROR-601`, `INFO-100`, `INFO-300`은 공식 메타데이터에 게시된 값이지만 이번 sample 호출로 억지로 발생시키지 않았다. 특히 인증키를 생략한 sample 모드는 포털 설명대로 `pIndex=1`, `pSize=5`를 강제해 잘못된 페이지값이나 1,000 초과 크기를 보내도 해당 입력을 무시하는 동작이 관찰됐다. 이를 운영 키의 검증 동작으로 일반화해서는 안 된다.
 
 ### 1.9 고등학교 시간표의 정확도 한계
 
@@ -245,6 +288,17 @@ HTML 오류 페이지, JSON 파싱 실패, 네트워크 실패와 timeout은 NEI
 - 응답에 포함된 `ALL_TI_YMD`, 학교 코드, 학년, 반이 요청과 맞지 않는 행은 신뢰하지 않는다.
 - `PERIO`를 정수로 검증해 오름차순 정렬하고, 비정상 교시는 버리거나 안전한 오류로 처리한다.
 - 원천 API의 미래 필드 추가는 허용하되 필수 필드 누락이나 타입 변경은 조용히 무시하지 않는다.
+
+### 1.13 비공식 실제 구현 교차조사
+
+아래 자료는 모두 2026-09-22에 소스까지 확인한 비공식 GitHub 구현이다. 공식 명세를 대체하지 않으며, 여러 독립 구현이 실제로 어떤 요청·응답 형태를 사용하는지와 흔한 실패 패턴을 찾는 교차검증 자료로만 사용했다. 링크는 조사 당시 커밋에 고정했다.
+
+1. **RKDH2/neis-api.ts** — [`SchoolInfo` 요청 타입](https://github.com/RKDH2/neis-api.ts/blob/344f3786291455c988558939d0a7ba13f685713d/src/types/requests/SchoolInfo.ts), [`HisTimetable` 요청 타입](https://github.com/RKDH2/neis-api.ts/blob/344f3786291455c988558939d0a7ba13f685713d/src/types/requests/HisTimetable.ts), [`HisTimetable` 응답 타입](https://github.com/RKDH2/neis-api.ts/blob/344f3786291455c988558939d0a7ba13f685713d/src/types/responses/HisTimetable.ts)을 확인했다. 학교 검색의 선택 필터, 고교 시간표의 두 필수 코드와 날짜·학년·반·계열·학과·강의실 필터, 응답의 `PERIO`/`ITRT_CNTNT` 문자열 구성이 공식 메타데이터와 일치한다.
+2. **Seungpyo1007/neis_plus** — [`client.dart`](https://github.com/Seungpyo1007/neis_plus/blob/e815f8a2773b2921b401db486f93c5d80d3186a6/lib/src/client.dart)와 [`services.dart`](https://github.com/Seungpyo1007/neis_plus/blob/e815f8a2773b2921b401db486f93c5d80d3186a6/lib/src/services.dart)를 확인했다. `/hub` 고정 endpoint, 학교급별 네 시간표 리소스, `yyyyMMdd`, `ATPT_OFCDC_SC_CODE + SD_SCHUL_CODE`, 최상위 `RESULT`와 `head.RESULT` 양쪽 검사, `INFO-200` 빈 목록 분리, 최대 1,000건 및 keyless 5건 제한을 독립적으로 다룬다. 또한 교육청은 코드만 안정적이고 공식 이름은 행에서 읽어야 한다는 정책이 이번 실호출 결과와 일치한다.
+3. **techkwon/neis-school-cli** — [`neis_cli.py`](https://github.com/techkwon/neis-school-cli/blob/25bdea9bc03c930b4a59e668353488eced44748d/skills/neis-school-cli/scripts/neis_cli.py)를 확인했다. `Type=json&pIndex=1&pSize=100`, 서버 키가 있을 때만 `KEY` 추가, 학교 검색 후 학교급별 endpoint 선택, 시간표에 두 코드·`ALL_TI_YMD`·`GRADE`·`CLASS_NM` 전달, `INFO-000`/`INFO-200` 분기가 공식 요청 구조와 일치한다.
+4. **dolphin2410/timetables-neis** — [`Timetables.tsx`](https://github.com/dolphin2410/timetables-neis/blob/dd89366fef9e7e036c6a80c558745962d1d130d9/src/components/Timetables.tsx)를 실제 웹 사용 사례로 확인했다. 같은 시간표 query와 `row[].PERIO`/`ITRT_CNTNT`를 사용하지만 `REACT_APP_NEIS_API_KEY`로 브라우저에서 NEIS를 직접 호출하고, 오류를 단순 `null`로 축약한다. 요청 모양을 교차확인하는 근거는 되지만 **키 비노출과 논리 오류 구분이 필요한 이 서비스에서는 따라서는 안 되는 구현**이다.
+
+교차조사 결과는 공식 자료와 충돌하지 않았다. 다만 비공식 구현마다 특수학교 지원, 페이지 반복 감지, 오류 구분, 키 보호 수준이 달랐으므로 최종 계약은 계속 공식 메타데이터와 공식 API 실응답을 기준으로 한다.
 
 ## 2. Apple 단축어와 Siri
 
@@ -316,9 +370,11 @@ Apple 공식 문서는 단축어 앱에서 다음 두 공유 경로를 제공한
 ### 3.1 2026-09-22 실제 호출로 확인한 사항
 
 - `schoolInfo?Type=json&SCHUL_NM=서울`에서 `head.RESULT=INFO-000`과 학교 행을 확인했다.
-- `misTimetable` 및 `hisTimetable`에서 필수 학교 코드와 날짜·학년·반 필터로 실제 행 구조를 확인했다.
+- 17개 시도교육청 코드를 `schoolInfo`의 `ATPT_OFCDC_SC_CODE`에 각각 보내 모두 `INFO-000`과 해당 교육청 행을 확인했다.
+- `elsTimetable`, `misTimetable`, `hisTimetable`, `spsTimetable` 모두에서 필수 학교 코드와 `ALL_TI_YMD=20260922`로 `INFO-000`, `head + row` 구조를 확인했다. 초등학교 실응답에는 숫자가 아닌 `CLASS_NM="난초"`도 있었다.
+- 한세사이버보안고등학교의 `hisTimetable`에 날짜·학년·반 필터를 함께 보내 `list_total_count=21`, `PERIO`, `ITRT_CNTNT`, 계열·학과·강의실 필드를 확인했다. sample key 제약 때문에 한 응답에는 첫 5행만 왔다.
 - 파라미터가 빠진 시간표 호출은 최상위 `ERROR-300`, 존재하지 않는 날짜는 최상위 `INFO-200`, 잘못된 키는 최상위 `ERROR-290`을 반환했다.
-- 위 세 논리 상태와 정상 상태는 모두 HTTP 200이었다.
+- 존재하지 않는 리소스 호출은 최상위 `ERROR-310`을 반환했다. 위 논리 상태와 정상 상태는 모두 HTTP 200이었다.
 - 익명 sample key 호출은 요청한 `pSize`와 무관하게 공식 설명대로 최대 5행을 반환하는 동작을 확인했다.
 - 공식 포털의 메타데이터에서 다섯 리소스의 요청 변수, 출력 컬럼, 메시지 코드를 대조했다.
 

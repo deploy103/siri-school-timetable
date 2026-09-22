@@ -2,6 +2,7 @@
 
 import { FormEvent, useMemo, useRef, useState } from "react";
 import { CheckIcon, SearchIcon } from "@/components/icons";
+import { EDUCATION_OFFICES } from "@/lib/education-offices";
 import type { ApiErrorBody, School, SchoolSettings, SchoolsResponse } from "@/types/client";
 
 interface Props {
@@ -24,11 +25,12 @@ async function readError(response: Response): Promise<string> {
 }
 
 export function SchoolSetup({ initialSettings, onSave, onCancel }: Props) {
+  const [officeCode, setOfficeCode] = useState(initialSettings?.school.officeCode ?? "");
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<School[]>([]);
   const [selected, setSelected] = useState<School | null>(initialSettings?.school ?? null);
   const [grade, setGrade] = useState(initialSettings?.grade ?? 1);
-  const [className, setClassName] = useState(initialSettings?.className ?? 1);
+  const [className, setClassName] = useState(initialSettings?.className ?? "1");
   const [isSearching, setIsSearching] = useState(false);
   const [hasSearched, setHasSearched] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -38,7 +40,6 @@ export function SchoolSetup({ initialSettings, onSave, onCancel }: Props) {
     () => Array.from({ length: selected ? gradeLimit(selected) : 3 }, (_, index) => index + 1),
     [selected],
   );
-  const classes = useMemo(() => Array.from({ length: 20 }, (_, index) => index + 1), []);
 
   async function search(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -52,7 +53,9 @@ export function SchoolSetup({ initialSettings, onSave, onCancel }: Props) {
     setError(null);
     setHasSearched(true);
     try {
-      const response = await fetch(`/api/schools?name=${encodeURIComponent(name)}`);
+      const params = new URLSearchParams({ name });
+      if (officeCode) params.set("officeCode", officeCode);
+      const response = await fetch(`/api/schools?${params.toString()}`);
       if (!response.ok) throw new Error(await readError(response));
       const body = (await response.json()) as SchoolsResponse;
       setResults(body.schools);
@@ -68,12 +71,23 @@ export function SchoolSetup({ initialSettings, onSave, onCancel }: Props) {
   function chooseSchool(school: School) {
     setSelected(school);
     setGrade(1);
-    setClassName(1);
+    setClassName("1");
+  }
+
+  function changeOffice(nextOfficeCode: string) {
+    setOfficeCode(nextOfficeCode);
+    setResults([]);
+    setHasSearched(false);
+    setError(null);
+    if (selected?.officeCode !== nextOfficeCode) setSelected(null);
   }
 
   function save(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (selected) onSave({ school: selected, grade, className });
+    const normalizedClassName = className.trim();
+    if (selected && normalizedClassName) {
+      onSave({ school: selected, grade, className: normalizedClassName });
+    }
   }
 
   return (
@@ -86,8 +100,28 @@ export function SchoolSetup({ initialSettings, onSave, onCancel }: Props) {
       </header>
 
       <section className="card setup-card" aria-labelledby="school-search-heading">
-        <h2 id="school-search-heading">학교 찾기</h2>
+        <div className="setup-section-heading">
+          <span className="step-number" aria-hidden="true">1</span>
+          <div>
+            <h2 id="school-search-heading">지역과 학교 찾기</h2>
+            <p>지역을 고르면 같은 이름의 학교를 더 쉽게 찾을 수 있어요.</p>
+          </div>
+        </div>
         <form className="search-form" onSubmit={search} role="search">
+          <label htmlFor="education-office">지역</label>
+          <select
+            id="education-office"
+            value={officeCode}
+            onChange={(event) => changeOffice(event.target.value)}
+          >
+            <option value="">전체 지역</option>
+            {EDUCATION_OFFICES.map((office) => (
+              <option key={office.code} value={office.code}>{office.shortName}</option>
+            ))}
+          </select>
+          <p className="field-help">
+            {officeCode ? "선택한 지역의 학교만 검색합니다." : "전국 17개 시도교육청의 학교를 검색합니다."}
+          </p>
           <label htmlFor="school-name">학교 이름</label>
           <div className="search-row">
             <div className="input-with-icon">
@@ -97,7 +131,7 @@ export function SchoolSetup({ initialSettings, onSave, onCancel }: Props) {
                 type="search"
                 value={query}
                 onChange={(event) => setQuery(event.target.value)}
-                placeholder="예: 한세사이버보안고"
+                placeholder="예: 미래초등학교"
                 autoComplete="off"
                 enterKeyHint="search"
               />
@@ -109,11 +143,12 @@ export function SchoolSetup({ initialSettings, onSave, onCancel }: Props) {
         </form>
 
         <div aria-live="polite" className="search-feedback">
+          {isSearching && <p className="searching-message">학교를 검색하고 있어요.</p>}
           {error && <p className="inline-error" role="alert">{error}</p>}
           {!error && hasSearched && !isSearching && results.length === 0 && (
             <div className="compact-empty">
               <strong>검색 결과가 없어요.</strong>
-              <span>학교의 정식 이름이나 지역명을 빼고 다시 검색해 보세요.</span>
+              <span>학교의 정식 이름을 확인하거나 다른 지역 또는 전체 지역으로 다시 검색해 보세요.</span>
             </div>
           )}
         </div>
@@ -133,8 +168,8 @@ export function SchoolSetup({ initialSettings, onSave, onCancel }: Props) {
                       onClick={() => chooseSchool(school)}
                     >
                       <span className="school-option-main">
+                        <span className="school-option-meta">{school.locality ?? school.region} · {school.kind}</span>
                         <strong>{school.name}</strong>
-                        <span>{school.region} · {school.kind}</span>
                         <small>{school.address}</small>
                       </span>
                       <span className="selection-indicator" aria-hidden="true">{active && <CheckIcon />}</span>
@@ -149,23 +184,38 @@ export function SchoolSetup({ initialSettings, onSave, onCancel }: Props) {
 
       {selected && (
         <section className="card class-card" aria-labelledby="class-heading">
+          <div className="setup-section-heading selected-school-heading">
+            <span className="step-number" aria-hidden="true">2</span>
+            <div>
+              <span className="selected-badge"><CheckIcon /> 선택한 학교</span>
+              <h2 id="class-heading">학년과 반 설정</h2>
+            </div>
+          </div>
           <div className="selected-school">
-            <span className="selected-badge"><CheckIcon /> 선택한 학교</span>
-            <h2 id="class-heading">{selected.name}</h2>
-            <p>{selected.region} · {selected.kind}</p>
+            <h3>{selected.name}</h3>
+            <p>{selected.locality ?? selected.region} · {selected.kind}</p>
+            <small>{selected.address}</small>
           </div>
           <form onSubmit={save}>
             <div className="select-grid">
-              <label>학년
-                <select value={grade} onChange={(event) => setGrade(Number(event.target.value))}>
+              <div>
+                <label htmlFor="school-grade">학년</label>
+                <select id="school-grade" value={grade} onChange={(event) => setGrade(Number(event.target.value))}>
                   {grades.map((item) => <option key={item} value={item}>{item}학년</option>)}
                 </select>
-              </label>
-              <label>반
-                <select value={className} onChange={(event) => setClassName(Number(event.target.value))}>
-                  {classes.map((item) => <option key={item} value={item}>{item}반</option>)}
-                </select>
-              </label>
+              </div>
+              <div>
+                <label htmlFor="school-class">반</label>
+                <input
+                  id="school-class"
+                  value={className}
+                  onChange={(event) => setClassName(event.target.value)}
+                  maxLength={20}
+                  placeholder="예: 1 또는 난초"
+                  required
+                />
+                <p className="field-help">숫자 또는 학교에서 사용하는 반 이름을 입력하세요.</p>
+              </div>
             </div>
             {(selected.kind === "고등학교" || selected.kind === "특수학교") && (
               <p className="course-notice">
@@ -176,7 +226,9 @@ export function SchoolSetup({ initialSettings, onSave, onCancel }: Props) {
             )}
             <div className="form-actions">
               {onCancel && <button type="button" className="button secondary" onClick={onCancel}>취소</button>}
-              <button type="submit" className="button primary grow">설정 저장하고 시간표 보기</button>
+              <button type="submit" className="button primary grow" disabled={!className.trim()}>
+                설정 저장하고 시간표 보기
+              </button>
             </div>
           </form>
         </section>

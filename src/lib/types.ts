@@ -14,6 +14,7 @@ export interface School {
   kind: SchoolKind;
   address: string;
   region: string;
+  locality?: string;
 }
 
 export interface Lesson {
@@ -28,7 +29,7 @@ export interface TimetableResponse {
     kind: SchoolKind;
   };
   grade: number;
-  className: number;
+  className: string;
   lessons: Lesson[];
 }
 
