@@ -170,7 +170,7 @@ describe("Siri meal speech", () => {
       "오늘 조식은 죽, 중식은 쌀밥, 미역국, 제육볶음, 배추김치, 석식은 볶음밥입니다.",
     );
     expect(mealToSpeech({ date: "2026-09-22", school: { name: "학교" }, meals: [] })).toBe(
-      "오늘 등록된 학교 급식이 없습니다.",
+      "오늘 등록된 급식이 없습니다.",
     );
   });
 });

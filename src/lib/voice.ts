@@ -25,7 +25,7 @@ export function stripAllergenNotation(dish: string): string {
 }
 
 export function mealToSpeech(mealResponse: MealResponse): string {
-  if (mealResponse.meals.length === 0) return "오늘 등록된 학교 급식이 없습니다.";
+  if (mealResponse.meals.length === 0) return "오늘 등록된 급식이 없습니다.";
 
   const meals = mealResponse.meals
     .slice()
