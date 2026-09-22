@@ -89,15 +89,19 @@ describe("TimetableView", () => {
     await screen.findByText("국어");
 
     await user.click(screen.getByRole("button", { name: "Siri 설정" }));
-    const dialog = screen.getByRole("dialog", { name: "Siri로 시간표 듣기" });
+    const dialog = screen.getByRole("dialog", { name: "Siri로 학교 정보 듣기" });
     expect(within(dialog).getByText("‘URL 콘텐츠 가져오기’ 추가")).toBeVisible();
     expect(within(dialog).getByText("‘텍스트 말하기’ 추가")).toBeVisible();
     const input = within(dialog).getByLabelText("내 시간표 주소");
     expect((input as HTMLInputElement).value).toContain("/api/voice/timetable?officeCode=B10&schoolCode=7011234");
 
-    await user.click(within(dialog).getByRole("button", { name: "복사" }));
+    expect((within(dialog).getByLabelText("내 급식 주소") as HTMLInputElement).value).toContain(
+      "/api/voice/meal?officeCode=B10&schoolCode=7011234",
+    );
+    expect((within(dialog).getByLabelText("내 급식 주소") as HTMLInputElement).value).not.toContain("grade=");
+    await user.click(within(dialog).getByRole("button", { name: "시간표 URL 복사" }));
     expect(writeText).toHaveBeenCalledWith((input as HTMLInputElement).value);
-    expect(within(dialog).getByRole("button", { name: "복사됨" })).toBeVisible();
+    expect(within(dialog).getByRole("button", { name: "시간표 URL 복사" })).toHaveTextContent("복사됨");
     await user.keyboard("{Escape}");
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });

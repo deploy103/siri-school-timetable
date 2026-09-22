@@ -77,6 +77,15 @@ export const timetableQuerySchema = z
 
 export type TimetableQuery = z.infer<typeof timetableQuerySchema>;
 
+export const mealQuerySchema = z.object({
+  officeCode: z.enum(EDUCATION_OFFICE_CODES, {
+    message: "지원하지 않는 지역 코드입니다.",
+  }),
+  schoolCode: compactCode,
+});
+
+export type MealQuery = z.infer<typeof mealQuerySchema>;
+
 export const classQuerySchema = z.object({
   officeCode: z.enum(EDUCATION_OFFICE_CODES, {
     message: "지원하지 않는 지역 코드입니다.",

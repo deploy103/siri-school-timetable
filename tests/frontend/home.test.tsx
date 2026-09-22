@@ -73,6 +73,32 @@ describe("HomePage", () => {
     expect(JSON.parse(window.localStorage.getItem(STORAGE_KEY) ?? "null")).toEqual(settings);
   });
 
+  it("uses the same saved school when switching from timetable to meals", async () => {
+    const user = userEvent.setup();
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.startsWith("/api/meal/today")) {
+        return new Response(JSON.stringify({
+          date: "2026-09-22",
+          school: { name: settings.school.name },
+          meals: [{ code: "2", name: "중식", dishes: ["쌀밥"], calories: "700 Kcal", nutrition: "", origin: "" }],
+        }), { status: 200 });
+      }
+      return new Response(JSON.stringify(timetable), { status: 200 });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    render(<HomePage />);
+    await screen.findByText("수학");
+
+    await user.click(screen.getByRole("button", { name: /^급식$/ }));
+    expect(await screen.findByRole("heading", { name: "중식" })).toBeVisible();
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/meal/today?officeCode=B10&schoolCode=7011234",
+      { cache: "no-store" },
+    );
+    expect(JSON.parse(window.localStorage.getItem(STORAGE_KEY) ?? "null")).toEqual(settings);
+  });
+
   it("persists a newly selected school", async () => {
     window.localStorage.clear();
     const user = userEvent.setup();

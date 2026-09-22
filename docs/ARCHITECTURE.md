@@ -2,7 +2,7 @@
 
 ## 목표와 경계
 
-Time Siri는 로그인이나 데이터베이스 없이 학교·학년·반을 브라우저에 저장하고, NEIS 교육정보 개방 포털의 당일 시간표를 보여 주는 Next.js 애플리케이션이다. 브라우저는 NEIS에 직접 접속하지 않는다. `NEIS_API_KEY`와 외부 API 통신은 서버 런타임에만 존재한다.
+Time Siri는 로그인이나 데이터베이스 없이 학교·학년·반을 브라우저에 저장하고, NEIS 교육정보 개방 포털의 당일 시간표와 급식을 보여 주는 Next.js 애플리케이션이다. 브라우저는 NEIS에 직접 접속하지 않는다. `NEIS_API_KEY`와 외부 API 통신은 서버 런타임에만 존재한다.
 
 ```text
 모바일 브라우저 ── same-origin JSON ──> Next.js Route Handler
@@ -12,6 +12,7 @@ Time Siri는 로그인이나 데이터베이스 없이 학교·학년·반을 �
       └─ Web Speech API(미리 듣기)
 
 iPhone 단축어 ── same-origin text/plain ──> /api/voice/timetable
+              └─ same-origin text/plain ──> /api/voice/meal
 ```
 
 ## 주요 흐름
@@ -21,6 +22,7 @@ iPhone 단축어 ── same-origin text/plain ──> /api/voice/timetable
 3. `GET /api/timetable/today`는 서울 시간대의 날짜를 구하고 학교 종류에 맞는 NEIS 데이터셋을 선택한다.
 4. NEIS 행은 공백 제거, 유효 교시 필터, 교시 중복 제거, 오름차순 정렬을 거쳐 안정적인 응답 형식으로 변환된다.
 5. 음성 API는 같은 조회 결과를 한국어 문장으로 직렬화해 `text/plain; charset=utf-8`로 반환한다.
+6. `GET /api/meal/today`는 같은 학교 코드와 KST 날짜로 `mealServiceDietInfo`를 조회한다. 웹 메뉴에는 알레르기 표기를 보존하고 급식 음성 문장에서만 끝의 알레르기 번호 묶음을 제거한다.
 
 ## API 계약
 
@@ -31,6 +33,8 @@ iPhone 단축어 ── same-origin text/plain ──> /api/voice/timetable
 | `/api/classes?officeCode=&schoolCode=` | JSON | 학교·학년도별 서버 캐시 + private 캐시 헤더 | 검색용 제한 |
 | `/api/timetable/today?...` | JSON | 짧은 서버 캐시 + private 캐시 헤더 | 시간표용 제한 |
 | `/api/voice/timetable?...` | UTF-8 text | 짧은 서버 캐시 | 시간표용 제한 |
+| `/api/meal/today?officeCode=&schoolCode=` | JSON | 학교·날짜별 10분 서버 캐시 + private 캐시 헤더 | 조회용 제한 |
+| `/api/voice/meal?officeCode=&schoolCode=` | UTF-8 text | 같은 급식 서버 캐시 | 음성용 제한 |
 
 시간표의 공통 쿼리 파라미터는 `officeCode`, `schoolCode`, `kind`, `grade`, `className`이다. 오류 JSON은 `{ "error": { "code": "...", "message": "..." } }` 형태이며 스택, 원본 NEIS 본문, API 키를 포함하지 않는다.
 
@@ -49,7 +53,7 @@ iPhone 단축어 ── same-origin text/plain ──> /api/voice/timetable
 - 과도한 요청: `429`와 `Retry-After`
 - NEIS 타임아웃: 제한된 재시도 후 `504`
 - NEIS 오류/형식 오류: 안전한 메시지와 `502`
-- 결과 없음: 성공한 빈 `lessons`와 주말·휴업일 안내
+- 결과 없음: 성공한 빈 `lessons` 또는 `meals`와 주말·휴업일·미급식일 안내
 - API 키 없음 + Mock 꺼짐: `NEIS_NOT_CONFIGURED`와 `503`; health는 `unconfigured/degraded`
 - 명시적 `NEIS_MOCK_MODE=true`: 네트워크를 쓰지 않는 결정적 개발 데이터
 

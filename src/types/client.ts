@@ -39,6 +39,21 @@ export interface Timetable {
   lessons: Lesson[];
 }
 
+export interface Meal {
+  code: string;
+  name: string;
+  dishes: string[];
+  calories: string;
+  nutrition: string;
+  origin: string;
+}
+
+export interface MealsToday {
+  date: string;
+  school: Pick<School, "name">;
+  meals: Meal[];
+}
+
 export interface SchoolsResponse {
   schools: School[];
 }

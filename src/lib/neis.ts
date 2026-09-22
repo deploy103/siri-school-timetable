@@ -1,8 +1,8 @@
 import { MemoryCache } from "@/lib/cache";
 import type { EducationOfficeCode } from "@/lib/education-offices";
 import { AppError } from "@/lib/errors";
-import type { Lesson, School, SchoolClass, SchoolKind, TimetableResponse } from "@/lib/types";
-import type { TimetableQuery } from "@/lib/schemas";
+import type { Lesson, Meal, MealResponse, School, SchoolClass, SchoolKind, TimetableResponse } from "@/lib/types";
+import type { MealQuery, TimetableQuery } from "@/lib/schemas";
 
 export const NEIS_BASE_URL = "https://open.neis.go.kr/hub";
 
@@ -12,6 +12,7 @@ const DATASETS: Readonly<Record<SchoolKind, string>> = {
   고등학교: "hisTimetable",
   특수학교: "spsTimetable",
 };
+const MEAL_DATASET = "mealServiceDietInfo";
 
 const MOCK_SCHOOLS: readonly School[] = [
   {
@@ -66,9 +67,21 @@ const MOCK_LESSONS: readonly Lesson[] = [
   { period: 4, subject: "웹 프로그래밍" },
 ] as const;
 
+const MOCK_MEALS: readonly Meal[] = [
+  {
+    code: "2",
+    name: "중식",
+    dishes: ["쌀밥", "된장찌개 (5.6)", "제육볶음 (5.6.10)", "배추김치 (9)"],
+    calories: "782.3 Kcal",
+    nutrition: "탄수화물(g) : 118.2\n단백질(g) : 34.5\n지방(g) : 20.1",
+    origin: "쌀 : 국내산\n돼지고기 : 국내산\n배추 : 국내산",
+  },
+] as const;
+
 const schoolCache = new MemoryCache<School[]>(200);
 const classCache = new MemoryCache<SchoolClass[]>(300);
 const timetableCache = new MemoryCache<TimetableResponse>(500);
+const mealCache = new MemoryCache<MealResponse>(500);
 const MAX_RESPONSE_BYTES = 2_000_000;
 
 export function timetableDataset(kind: SchoolKind): string {
@@ -238,6 +251,49 @@ export function parseLessons(rows: readonly JsonRecord[]): Lesson[] {
       ...(subjects.size > 1 ? { ambiguous: true } : {}),
     }))
     .sort((left, right) => left.period - right.period);
+}
+
+function splitNeisBreaks(value: string): string[] {
+  return value
+    .split(/<br\s*\/?>/giu)
+    .map((part) => part.replace(/\s+/gu, " ").trim())
+    .filter(Boolean);
+}
+
+function neisMultilineText(value: string): string {
+  return splitNeisBreaks(value).join("\n");
+}
+
+export function parseMeals(payload: unknown): Meal[] {
+  return extractNeisRows(payload, MEAL_DATASET)
+    .map((row): Meal | undefined => {
+      const code = stringField(row, "MMEAL_SC_CODE");
+      const name = stringField(row, "MMEAL_SC_NM");
+      const dishes = splitNeisBreaks(stringField(row, "DDISH_NM"));
+      if (!/^\d{1,2}$/.test(code) || !name || dishes.length === 0) return undefined;
+      return {
+        code,
+        name,
+        dishes,
+        calories: stringField(row, "CAL_INFO"),
+        nutrition: neisMultilineText(stringField(row, "NTR_INFO")),
+        origin: neisMultilineText(stringField(row, "ORPLC_INFO")),
+      };
+    })
+    .filter((meal): meal is Meal => meal !== undefined)
+    .sort((left, right) => Number(left.code) - Number(right.code) || left.name.localeCompare(right.name, "ko-KR"));
+}
+
+function matchesMealRequest(row: JsonRecord, query: MealQuery, date: string): boolean {
+  const expectedFields: ReadonlyArray<readonly [string, string]> = [
+    ["ATPT_OFCDC_SC_CODE", query.officeCode],
+    ["SD_SCHUL_CODE", query.schoolCode],
+    ["MLSV_YMD", date.replaceAll("-", "")],
+  ];
+  return expectedFields.every(([field, expected]) => {
+    const actual = stringField(row, field);
+    return actual.length === 0 || actual === expected;
+  });
 }
 
 function combineSubjects(subjects: string[]): string {
@@ -433,6 +489,62 @@ export class NeisClient {
     };
   }
 
+  async getTodayMeals(query: MealQuery, date: string): Promise<MealResponse> {
+    if (this.isMockMode) {
+      const school = MOCK_SCHOOLS.find(
+        (item) => item.officeCode === query.officeCode && item.schoolCode === query.schoolCode,
+      );
+      if (!school) {
+        throw new AppError(
+          "NOT_FOUND",
+          404,
+          "학교 설정을 찾을 수 없습니다. 학교를 다시 검색해 설정해 주세요.",
+        );
+      }
+      return {
+        date,
+        school: { name: school.name },
+        meals: MOCK_MEALS.map((meal) => ({ ...meal, dishes: [...meal.dishes] })),
+      };
+    }
+    this.assertConfigured();
+
+    const payload = await this.request(MEAL_DATASET, {
+      ATPT_OFCDC_SC_CODE: query.officeCode,
+      SD_SCHUL_CODE: query.schoolCode,
+      MLSV_YMD: date.replaceAll("-", ""),
+      pIndex: "1",
+      pSize: "100",
+    });
+    const rows = extractNeisRows(payload, MEAL_DATASET).filter((row) =>
+      matchesMealRequest(row, query, date),
+    );
+    const meals = parseMeals({
+      [MEAL_DATASET]: [{ row: rows }],
+    });
+    let schoolName = rows.length > 0 ? stringField(rows[0] ?? {}, "SCHUL_NM") : "";
+    if (!schoolName) {
+      const schoolPayload = await this.request("schoolInfo", {
+        ATPT_OFCDC_SC_CODE: query.officeCode,
+        SD_SCHUL_CODE: query.schoolCode,
+        pIndex: "1",
+        pSize: "5",
+      });
+      const matchingSchool = parseSchools(schoolPayload).find(
+        (school) => school.officeCode === query.officeCode && school.schoolCode === query.schoolCode,
+      );
+      if (!matchingSchool) {
+        throw new AppError(
+          "NOT_FOUND",
+          404,
+          "학교 설정을 찾을 수 없습니다. 학교를 다시 검색해 설정해 주세요.",
+        );
+      }
+      schoolName = matchingSchool.name;
+    }
+    return { date, school: { name: schoolName }, meals };
+  }
+
   private assertConfigured(): void {
     if (this.apiKey.length === 0) {
       throw new AppError(
@@ -447,7 +559,8 @@ export class NeisClient {
     if (
       !Object.values(DATASETS).includes(dataset) &&
       dataset !== "schoolInfo" &&
-      dataset !== "classInfo"
+      dataset !== "classInfo" &&
+      dataset !== MEAL_DATASET
     ) {
       throw new AppError("INVALID_INPUT", 400, "지원하지 않는 교육정보 요청입니다.");
     }
@@ -557,6 +670,11 @@ export async function getTodayTimetable(query: TimetableQuery, date: string): Pr
   return timetableCache.getOrLoad(key, 5 * 60_000, () => new NeisClient().getTodayTimetable(query, date));
 }
 
+export async function getTodayMeals(query: MealQuery, date: string): Promise<MealResponse> {
+  const key = `meal:${date}:${query.officeCode}:${query.schoolCode}`;
+  return mealCache.getOrLoad(key, 10 * 60_000, () => new NeisClient().getTodayMeals(query, date));
+}
+
 export async function getSchoolClasses(
   officeCode: EducationOfficeCode,
   schoolCode: string,
@@ -572,4 +690,5 @@ export function clearNeisCaches(): void {
   schoolCache.clear();
   classCache.clear();
   timetableCache.clear();
+  mealCache.clear();
 }

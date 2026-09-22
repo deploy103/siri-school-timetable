@@ -40,6 +40,23 @@ export interface TimetableResponse {
   lessons: Lesson[];
 }
 
+export interface Meal {
+  code: string;
+  name: string;
+  dishes: string[];
+  calories: string;
+  nutrition: string;
+  origin: string;
+}
+
+export interface MealResponse {
+  date: string;
+  school: {
+    name: string;
+  };
+  meals: Meal[];
+}
+
 export interface ApiErrorBody {
   error: {
     code: string;

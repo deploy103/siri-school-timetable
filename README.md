@@ -5,15 +5,19 @@
 [![Node.js](https://img.shields.io/badge/Node.js-24_LTS-5FA04E?logo=nodedotjs&logoColor=white)](https://nodejs.org/)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-전국 초·중·고등학교를 검색해 오늘 시간표를 확인하고, iPhone Siri 단축어로 바로 들을 수 있는 모바일 우선 웹 서비스입니다. 로그인과 데이터베이스 없이 학교·학년·반 설정을 브라우저에 저장합니다.
+전국 초·중·고등학교를 검색해 오늘 시간표와 급식을 확인하고, iPhone Siri 단축어로 바로 들을 수 있는 모바일 우선 웹 서비스입니다. 로그인과 데이터베이스 없이 학교·학년·반 설정을 브라우저에 저장합니다.
 
 ```text
-학교 검색 → 학교·학년·반 저장 → 오늘 시간표 확인 → Siri 단축어 연결
+학교 검색 → 학교·학년·반 저장 → 오늘 시간표·급식 확인 → Siri 단축어 연결
 ```
 
 > “시리야, 오늘 학교 시간표 뭐야?”
 >
 > “오늘 시간표는 1교시 자료구조, 2교시 영어, 3교시 체육입니다.”
+>
+> “시리야, 오늘 학교 급식 뭐야?”
+>
+> “오늘 급식은 쌀밥, 미역국, 제육볶음, 배추김치입니다.”
 
 ## 기능
 
@@ -21,6 +25,8 @@
 - 학교 종류에 따른 NEIS 시간표 데이터셋 자동 선택
 - NEIS `classInfo` 기반 학과·학년·반 선택으로 특성화고 동명 학급 구분
 - 서울 시간 기준 오늘 시간표, 교시 정렬 및 중복/비정상 행 정리
+- 같은 학교 설정을 재사용하는 오늘 급식과 조식·중식·석식 구분
+- 웹에서는 알레르기 번호를 보존하고 Siri에서는 끝의 알레르기 표기만 제거
 - `localStorage` 기반 학교·학년·반 복원과 언제든 설정 변경
 - 브라우저 Web Speech API로 시간표 미리 듣기
 - Siri 단축어용 UTF-8 `text/plain` API와 설정 안내
@@ -116,7 +122,7 @@ docker compose exec siri-school-timetable \
 
 ## Siri 설정
 
-웹에서 학교 설정을 저장한 뒤 **Siri 설정**을 열고 URL을 복사한다. iPhone 단축어 앱에서 다음 세 동작을 순서대로 만든다.
+웹에서 학교 설정을 저장한 뒤 **Siri 설정**을 열고 시간표 또는 급식 URL을 복사한다. iPhone 단축어 앱에서 다음 세 동작을 순서대로 만든다.
 
 ```text
 URL
@@ -124,7 +130,7 @@ URL
 → 텍스트 말하기
 ```
 
-단축어 이름은 `오늘 학교 시간표 뭐야`로 저장한다. 이후 “시리야, 오늘 학교 시간표 뭐야?”라고 말한다. 웹사이트가 단축어를 자동 설치하거나 Siri에 자동 등록하지는 않는다. 자세한 내용은 [docs/SIRI_SETUP.md](docs/SIRI_SETUP.md)를 참고한다.
+시간표 단축어는 `오늘 학교 시간표 뭐야`, 급식 단축어는 `오늘 학교 급식 뭐야`로 각각 저장한다. 웹사이트가 단축어를 자동 설치하거나 Siri에 자동 등록하지는 않는다. 자세한 내용은 [docs/SIRI_SETUP.md](docs/SIRI_SETUP.md)를 참고한다.
 
 ## API
 
@@ -135,9 +141,11 @@ GET /api/schools?officeCode=B10&name=학교명
 GET /api/classes?officeCode=B10&schoolCode=학교코드
 GET /api/timetable/today?officeCode=...&schoolCode=...&kind=...&grade=2&className=1
 GET /api/voice/timetable?officeCode=...&schoolCode=...&kind=...&grade=2&className=1
+GET /api/meal/today?officeCode=...&schoolCode=...
+GET /api/voice/meal?officeCode=...&schoolCode=...
 ```
 
-학교 설정 화면에서 17개 시도교육청 또는 전체 지역을 선택한 뒤 학교명을 검색합니다. 학교 선택 후에는 NEIS가 제공한 학과·학년·반만 선택할 수 있습니다. 특성화고는 `DDDEP_NM`까지 시간표 요청에 전달해 서로 다른 학과의 같은 학년·반이 섞이지 않습니다. 학교·시간표 API는 JSON을 반환하고, 음성 API는 단축어가 그대로 말할 수 있는 `text/plain; charset=utf-8` 문장을 반환합니다.
+학교 설정 화면에서 17개 시도교육청 또는 전체 지역을 선택한 뒤 학교명을 검색합니다. 학교 선택 후에는 NEIS가 제공한 학과·학년·반만 선택할 수 있습니다. 특성화고는 `DDDEP_NM`까지 시간표 요청에 전달해 서로 다른 학과의 같은 학년·반이 섞이지 않습니다. 급식은 같은 설정의 교육청·학교 코드만 재사용하므로 다시 설정할 필요가 없습니다. 학교·시간표·급식 API는 JSON을 반환하고, 음성 API는 단축어가 그대로 말할 수 있는 `text/plain; charset=utf-8` 문장을 반환합니다.
 
 NEIS가 1·2교시 행 없이 3교시부터 반환하면 화면도 3교시부터 표시하고 그 이유를 안내합니다. 서로 다른 과목이 같은 교시에 남는 경우 화면에는 후보를 표시하되 Siri는 긴 후보 목록 대신 `선택 수업`이라고 짧게 읽습니다.
 
@@ -158,6 +166,7 @@ docker-compose.yml    로컬/단일 서버 실행 정의
 
 - 고등학교의 학과·계열·이동 수업처럼 `학년 + 반`만으로 구분되지 않는 시간표는 가능한 과목을 함께 표시하며, 개인별 수업을 확정할 수 없습니다.
 - NEIS가 시간표를 게시하지 않은 주말·휴업일·미게시일은 모두 정상 빈 결과로 안내된다.
+- NEIS가 급식을 게시하지 않은 주말·공휴일·방학·미급식일도 정상 빈 결과로 안내된다.
 - Rate Limit과 캐시는 프로세스 메모리 기반이다. 수평 확장 시 공유 제한 계층이 필요하다.
 - 브라우저 음성 미리 듣기는 Web Speech API 지원 여부와 설치된 한국어 음성에 따라 달라진다.
 - Siri 사용에는 iPhone에서 접근 가능한 HTTPS 배포 주소가 필요하다.

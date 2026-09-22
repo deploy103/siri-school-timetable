@@ -303,6 +303,20 @@ HTML 오류 페이지, JSON 파싱 실패, 네트워크 실패와 timeout은 NEI
 
 교차조사 결과는 공식 자료와 충돌하지 않았다. 다만 비공식 구현마다 특수학교 지원, 페이지 반복 감지, 오류 구분, 키 보호 수준이 달랐으므로 최종 계약은 계속 공식 메타데이터와 공식 API 실응답을 기준으로 한다.
 
+### 1.14 급식식단정보 조사
+
+공식 [급식식단정보 데이터셋](https://open.neis.go.kr/portal/data/service/selectServicePage.do?infId=OPEN17320190722180924242823&infSeq=2)은 `mealServiceDietInfo`를 사용한다. 필수 학교 식별자는 `ATPT_OFCDC_SC_CODE`, `SD_SCHUL_CODE`이며, 단일 날짜는 `MLSV_YMD=yyyyMMdd`로 조회한다. 선택 필터는 `MMEAL_SC_CODE`, `MLSV_FROM_YMD`, `MLSV_TO_YMD`도 제공한다.
+
+공식 출력의 핵심은 `SCHUL_NM`, `MMEAL_SC_CODE`, `MMEAL_SC_NM`, `MLSV_YMD`, `DDISH_NM`, `ORPLC_INFO`, `CAL_INFO`, `NTR_INFO`이다. 공식 설명은 요리명 뒤 1~19 번호가 알레르기 유발 식재료 번호임을 명시한다. 2026-09-22 한세사이버보안고등학교 실호출에서는 중식 한 행, `DDISH_NM`의 `<br/>` 구분, `(5.6.10.13.18)` 알레르기 표기, `885.4 Kcal`, `<br/>`로 구분된 영양·원산지 문자열을 확인했다. 정상 구조와 `INFO-200`/오류 판정은 다른 NEIS 데이터셋과 같다.
+
+급식 구현 사례도 공식 자료를 대체하지 않는 교차검증용으로 확인했다.
+
+1. **Seungpyo1007/neis_plus** — [`services.dart`](https://github.com/Seungpyo1007/neis_plus/blob/e815f8a2773b2921b401db486f93c5d80d3186a6/lib/src/services.dart)에서 두 학교 코드를 필수값으로, 급식 종류와 날짜를 선택값으로 allowlist한다. [`models.dart`](https://github.com/Seungpyo1007/neis_plus/blob/e815f8a2773b2921b401db486f93c5d80d3186a6/lib/src/models.dart)는 `<br\s*/?>`를 대소문자 무시로 분리하고 끝의 괄호형 알레르기만 파싱해 음식명 내부 숫자를 보존한다.
+2. **cjaewon/neisgo** — [`meal.go`](https://github.com/cjaewon/neisgo/blob/ba801e8716dea4c34fc4e875abe1428505aa582e/meal.go)는 공식 급식 응답 필드를 구조체로 매핑하고 `MMEAL_SC_CODE` 1·2·3을 조식·중식·석식으로 각각 보존한다.
+3. **MinseobKimm/NeisApiCrawlerWithKakao** — [`SchoolApi.py`](https://github.com/MinseobKimm/NeisApiCrawlerWithKakao/blob/8bd362ceca2810c53dcc4a458fb9142666f14b8b/SchoolApi.py)는 같은 학교 설정을 급식 요청에 재사용하고 `<br/>`를 줄바꿈으로 바꾼다. 다만 모든 숫자·점·슬래시를 제거하므로 정상 음식명까지 훼손할 수 있어 숫자 제거 방식은 채택하지 않았다.
+
+이에 따라 이 프로젝트는 모든 급식 행을 코드 순으로 보존하고, `<br>`, `<br/>`, `<br />`를 HTML 렌더링 없이 텍스트 배열로 분리한다. 웹 응답과 화면에는 알레르기 표기를 유지한다. Siri 변환에서만 문자열 끝의 괄호형 또는 점으로 끝나는 알레르기 번호 묶음을 보수적으로 제거하며 `2색나물`, `3종과일`, `10곡밥` 같은 일반 숫자는 유지한다.
+
 ## 2. Apple 단축어와 Siri
 
 ### 2.1 공식 출처
@@ -380,6 +394,7 @@ Apple 공식 문서는 단축어 앱에서 다음 두 공유 경로를 제공한
 - 존재하지 않는 리소스 호출은 최상위 `ERROR-310`을 반환했다. 위 논리 상태와 정상 상태는 모두 HTTP 200이었다.
 - 익명 sample key 호출은 요청한 `pSize`와 무관하게 공식 설명대로 최대 5행을 반환하는 동작을 확인했다.
 - 공식 포털의 메타데이터에서 다섯 리소스의 요청 변수, 출력 컬럼, 메시지 코드를 대조했다.
+- `mealServiceDietInfo` 실호출에서 급식 행과 조·중·석식 코드, 메뉴·칼로리·영양·원산지 필드 및 `<br/>` 구분을 확인했다.
 
 실제 키를 사용한 일일 quota와 대량 페이지네이션은 키가 제공되지 않아 검증하지 않았다. 공식 메타데이터의 `apiTrf=0` 표시를 무제한 보장으로 해석하지 않았으며, `ERROR-337`이 존재하므로 운영상 rate limit과 캐시가 필요하다.
 

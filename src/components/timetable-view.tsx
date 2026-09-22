@@ -8,6 +8,7 @@ import type { ApiErrorBody, SchoolSettings, Timetable } from "@/types/client";
 interface Props {
   settings: SchoolSettings;
   onChangeSettings: () => void;
+  onShowMeal?: () => void;
 }
 
 const koreanDate = new Intl.DateTimeFormat("ko-KR", {
@@ -31,7 +32,7 @@ async function apiError(response: Response): Promise<Error> {
   }
 }
 
-export function TimetableView({ settings, onChangeSettings }: Props) {
+export function TimetableView({ settings, onChangeSettings, onShowMeal }: Props) {
   const [timetable, setTimetable] = useState<Timetable | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -100,6 +101,11 @@ export function TimetableView({ settings, onChangeSettings }: Props) {
         <button className="button header-settings" type="button" onClick={onChangeSettings}><SettingsIcon />설정 변경</button>
       </header>
 
+      <nav className="view-tabs" aria-label="오늘 학교 정보">
+        <button type="button" className="active" aria-current="page">시간표</button>
+        <button type="button" onClick={onShowMeal}>급식</button>
+      </nav>
+
       <section id="main-content" className="hero-card">
         <div>
           <p className="date-line">{timetable ? formatDate(timetable.date) : "오늘 시간표"}</p>
@@ -162,7 +168,7 @@ export function TimetableView({ settings, onChangeSettings }: Props) {
 
       <section className="siri-card">
         <div className="siri-symbol" aria-hidden="true">✦</div>
-        <div><p className="eyebrow">Siri와 함께</p><h2>말 한마디로 시간표 확인</h2><p>“시리야, 오늘 학교 시간표 뭐야?”</p></div>
+        <div><p className="eyebrow">Siri와 함께</p><h2>말 한마디로 학교 정보 확인</h2><p>시간표와 급식을 각각 물어보세요.</p></div>
         <button type="button" className="button siri-button" onClick={() => setSiriOpen(true)}>Siri 설정</button>
       </section>
 

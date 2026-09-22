@@ -36,13 +36,21 @@ test("mobile-first setup, timetable, persistence, and Siri flow", async ({ page 
   await expect(page.getByText("3학년 2반")).toBeVisible();
 
   await page.getByRole("button", { name: "Siri 설정" }).click();
-  const dialog = page.getByRole("dialog", { name: "Siri로 시간표 듣기" });
+  const dialog = page.getByRole("dialog", { name: "Siri로 학교 정보 듣기" });
   await expect(dialog).toBeVisible();
   await expect(dialog.getByLabel("내 시간표 주소")).toHaveValue(/\/api\/voice\/timetable\?.*officeCode=C10/);
+  await expect(dialog.getByLabel("내 급식 주소")).toHaveValue(/\/api\/voice\/meal\?.*officeCode=C10/);
   await expect(dialog).toContainText("URL 콘텐츠 가져오기");
   await expect(dialog).toContainText("텍스트 말하기");
   await page.keyboard.press("Escape");
   await expect(dialog).toBeHidden();
+
+  await page.getByRole("button", { name: "급식", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "오늘 급식" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "중식" })).toBeVisible();
+  await expect(page.getByText("제육볶음 (5.6.10)")).toBeVisible();
+  await page.reload();
+  await expect(page.getByRole("heading", { name: "오늘 수업" })).toBeVisible();
 
   const hasHorizontalOverflow = await page.evaluate(
     () => document.documentElement.scrollWidth > document.documentElement.clientWidth,

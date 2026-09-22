@@ -98,7 +98,12 @@ select { padding: 10px 38px 10px 13px; }
 .brand .brand-mark { width: 37px; height: 37px; border-radius: 11px; font-size: .95rem; }
 .header-settings { padding: 8px 12px; color: #4e5b72; background: transparent; border-color: transparent; font-size: .9rem; }
 .header-settings:hover { background: #fff; }
+.view-tabs { margin: -10px 0 18px; padding: 4px; display: grid; grid-template-columns: 1fr 1fr; gap: 4px; background: #e9edf5; border-radius: 13px; }
+.view-tabs button { min-height: 42px; color: #69758a; background: transparent; border: 0; border-radius: 10px; font-weight: 800; }
+.view-tabs button:hover { color: var(--ink); }
+.view-tabs button.active { color: var(--primary); background: #fff; box-shadow: 0 3px 10px rgba(42, 55, 86, .1); }
 .hero-card { position: relative; overflow: hidden; min-height: 175px; display: flex; align-items: flex-end; justify-content: space-between; padding: 28px; color: #fff; background: linear-gradient(125deg, #2747bc, #4d5cce 60%, #7657d6); border-radius: 23px; box-shadow: 0 18px 38px rgba(50, 70, 170, .23); }
+.meal-hero { background: linear-gradient(125deg, #176f62, #2b8a78 60%, #4f9d72); box-shadow: 0 18px 38px rgba(25, 114, 91, .2); }
 .hero-card::after { position: absolute; width: 210px; height: 210px; right: -80px; top: -100px; content: ""; background: rgba(255,255,255,.09); border-radius: 50%; }
 .hero-card > * { position: relative; z-index: 1; }
 .date-line { margin: 0 0 7px; color: #dfe5ff; font-size: .9rem; font-weight: 650; }
@@ -115,6 +120,19 @@ select { padding: 10px 38px 10px 13px; }
 .lesson-list li div { display: flex; flex-direction: column; }
 .lesson-list li small { color: #7b879b; font-size: .76rem; }
 .lesson-list li strong { font-size: 1.06rem; }
+.meal-list { display: grid; gap: 13px; }
+.meal-card { padding: 20px; background: #fff; border: 1px solid #dfe6e5; border-radius: 18px; box-shadow: 0 6px 20px rgba(38, 72, 65, .05); }
+.meal-card-heading { padding-bottom: 13px; border-bottom: 1px solid #e7eeec; }
+.meal-card-heading h3 { margin: 0; color: #176f62; font-size: 1.2rem; }
+.meal-card > ul { margin: 15px 0 0; padding: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px 12px; list-style: none; }
+.meal-card > ul li { position: relative; padding-left: 14px; line-height: 1.45; word-break: keep-all; }
+.meal-card > ul li::before { position: absolute; left: 1px; top: .62em; width: 5px; height: 5px; content: ""; background: #52a28f; border-radius: 50%; }
+.meal-skeleton { display: grid; gap: 10px; }
+.meal-skeleton span, .meal-skeleton i { height: 15px; background: linear-gradient(90deg, #edf0f5 25%, #f8f9fb 50%, #edf0f5 75%); background-size: 200% 100%; border-radius: 999px; animation: shimmer 1.5s infinite; }
+.meal-skeleton span { width: 30%; height: 23px; }
+.meal-skeleton i { width: 70%; }
+.meal-skeleton i:nth-child(3) { width: 55%; }
+.meal-actions { margin-top: 14px; grid-template-columns: 1fr; }
 .action-grid { margin-top: 14px; display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .state-card { padding: 36px 22px; background: #fff; border: 1px solid var(--line); border-radius: 18px; text-align: center; }
 .state-icon { width: 48px; height: 48px; display: grid; place-items: center; margin: 0 auto 13px; color: var(--danger); background: #fff0ef; border-radius: 50%; font-size: 1.4rem; font-weight: 900; }
@@ -147,6 +165,8 @@ select { padding: 10px 38px 10px 13px; }
 .url-box input { min-width: 0; color: #4e5c74; background: #fff; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .78rem; }
 .copy-button { min-width: 92px; color: #fff; background: var(--primary); }
 .url-box small { display: block; margin-top: 7px; color: #727e93; font-size: .75rem; }
+.shortcut-url-list { display: grid; gap: 10px; }
+.url-security-note { margin: 9px 3px 0; color: #727e93; font-size: .78rem; }
 .shortcut-steps { margin: 22px 0; padding: 0; display: grid; gap: 14px; list-style: none; counter-reset: steps; }
 .shortcut-steps li { display: grid; grid-template-columns: 32px 1fr; gap: 11px; }
 .shortcut-steps li > span { width: 30px; height: 30px; display: grid; place-items: center; color: var(--primary); background: #ebefff; border-radius: 50%; font-size: .86rem; font-weight: 850; }
@@ -171,6 +191,7 @@ select { padding: 10px 38px 10px 13px; }
   .header-settings { padding-inline: 8px; }
   .header-settings svg { display: none; }
   .hero-card { min-height: 158px; padding: 22px; border-radius: 19px; }
+  .meal-card > ul { grid-template-columns: 1fr; }
   .lesson-list li { padding-inline: 14px; }
   .siri-card { grid-template-columns: auto 1fr; }
   .siri-button { grid-column: 1 / -1; width: 100%; }
