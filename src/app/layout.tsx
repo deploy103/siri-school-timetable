@@ -3,7 +3,7 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: "오늘의 시간표",
-  description: "학교와 학년, 반을 설정하고 오늘 시간표를 확인하거나 Siri로 들어보세요.",
+  description: "학교와 학년, 반을 설정하고 오늘 시간표와 급식을 확인하거나 Siri로 들어보세요.",
 };
 
 export const viewport: Viewport = {

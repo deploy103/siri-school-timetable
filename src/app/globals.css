@@ -33,11 +33,9 @@ button:disabled { cursor: not-allowed; opacity: .52; }
 .full-width { width: 100%; }
 .grow { flex: 1; }
 .eyebrow { margin: 0 0 4px; color: var(--primary); font-size: .82rem; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; }
-.brand-mark { width: 42px; height: 42px; display: inline-grid; place-items: center; flex: 0 0 auto; color: #fff; background: linear-gradient(135deg, #3157d5, #815bd6); border-radius: 13px; box-shadow: 0 7px 18px rgba(49, 87, 213, .22); font-size: 1.1rem; font-weight: 900; }
 
 .setup-page { max-width: 680px; }
 .setup-heading { margin: 8px 0 27px; text-align: center; }
-.setup-heading .brand-mark { margin-bottom: 14px; }
 .setup-heading h1 { margin: 3px 0 8px; font-size: clamp(1.75rem, 7vw, 2.35rem); letter-spacing: -.035em; }
 .setup-heading > p:last-child { max-width: 480px; margin: 0 auto; color: var(--muted); }
 .setup-card h2, .class-card h2 { margin: 0; font-size: 1.14rem; }
@@ -95,7 +93,6 @@ select { padding: 10px 38px 10px 13px; }
 
 .app-header { min-height: 54px; display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 25px; }
 .brand { display: flex; align-items: center; gap: 10px; color: var(--ink); font-weight: 850; text-decoration: none; }
-.brand .brand-mark { width: 37px; height: 37px; border-radius: 11px; font-size: .95rem; }
 .header-settings { padding: 8px 12px; color: #4e5b72; background: transparent; border-color: transparent; font-size: .9rem; }
 .header-settings:hover { background: #fff; }
 .view-tabs { margin: -10px 0 18px; padding: 4px; display: grid; grid-template-columns: 1fr 1fr; gap: 4px; background: #e9edf5; border-radius: 13px; }
@@ -201,7 +198,6 @@ select { padding: 10px 38px 10px 13px; }
 
 @media (max-width: 350px) {
   .page-shell { width: calc(100% - 20px); }
-  .brand > span:last-child { font-size: .9rem; }
   .search-row { flex-direction: column; }
   .search-button { width: 100%; }
   .hero-card { padding: 18px; }

@@ -70,7 +70,7 @@ export function MealView({ settings, onChangeSettings, onShowTimetable }: Props)
   return (
     <main className="page-shell timetable-page">
       <header className="app-header">
-        <a className="brand" href="#main-content" aria-label="오늘의 급식 홈"><span className="brand-mark" aria-hidden="true">시</span><span>오늘의 시간표</span></a>
+        <a className="brand" href="#main-content" aria-label="오늘의 급식 홈">오늘의 시간표</a>
         <button className="button header-settings" type="button" onClick={onChangeSettings}><SettingsIcon />설정 변경</button>
       </header>
 

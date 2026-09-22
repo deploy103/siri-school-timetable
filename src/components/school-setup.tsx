@@ -196,7 +196,6 @@ export function SchoolSetup({ initialSettings, onSave, onCancel }: Props) {
   return (
     <main className="page-shell setup-page">
       <header className="setup-heading">
-        <span className="brand-mark" aria-hidden="true">시</span>
         <p className="eyebrow">오늘의 시간표</p>
         <h1>{initialSettings ? "학교 설정 변경" : "내 학교를 알려주세요"}</h1>
         <p>학교와 학년, 반을 한 번만 설정하면 다음부터 바로 오늘 시간표를 볼 수 있어요.</p>
