@@ -77,16 +77,18 @@ NEIS_API_KEY=... pnpm test:integration
 
 ## Docker 실행
 
+운영 Compose는 host 포트를 공개하지 않고 기존 외부 Docker network인 `mvtp-web-net`을 사용합니다. 배포 전에 해당 network가 서버에 존재해야 합니다.
+
 ```bash
 cp .env.example .env
 # 실제 운영 데이터가 필요하면 .env에 NEIS_API_KEY를 입력한다.
 docker compose up -d --build
 docker compose ps
 docker compose logs --tail=100
-curl -f http://localhost:3000/api/health
+docker compose exec siri-school-timetable wget -qO- http://127.0.0.1:3000/api/health
 ```
 
-종료 명령은 `docker compose down`입니다. 이미지는 multi-stage standalone 빌드이고, 최종 컨테이너는 비루트·읽기 전용 파일 시스템으로 실행됩니다. API 키는 이미지가 아니라 컨테이너 실행 시 주입됩니다.
+같은 network의 reverse proxy에서는 `http://siri-school-timetable:3000`으로 접근합니다. 종료 명령은 `docker compose down`입니다. 이미지는 multi-stage standalone 빌드이고, 최종 컨테이너는 비루트·읽기 전용 파일 시스템으로 실행됩니다. API 키는 이미지가 아니라 컨테이너 실행 시 주입됩니다.
 
 ## Siri 설정
 

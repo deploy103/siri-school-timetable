@@ -1,10 +1,10 @@
 services:
-  web:
+  siri-school-timetable:
     build:
       context: .
       dockerfile: Dockerfile
-    ports:
-      - "3000:3000"
+    expose:
+      - "3000"
     environment:
       NODE_ENV: production
       NEIS_API_KEY: "${NEIS_API_KEY:-}"
@@ -24,3 +24,9 @@ services:
       timeout: 5s
       retries: 3
       start_period: 15s
+    networks:
+      - mvtp-web-net
+
+networks:
+  mvtp-web-net:
+    external: true
