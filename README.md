@@ -184,6 +184,8 @@ docker-compose.yml    로컬/단일 서버 실행 정의
 
 설계와 운영 세부사항은 [아키텍처](docs/ARCHITECTURE.md), [공식 문서 조사](docs/RESEARCH.md), [보안](docs/SECURITY.md)을 참고한다.
 
+한세사이버보안고등학교 교사용 별도 기능의 개발·운영 안내는 [한세 교사용 시간표 설정](docs/HANSEI_TEACHER_SETUP.md)을 참고한다. 이 경로는 기존 학생용 메뉴에 노출하지 않는다.
+
 ## 라이선스
 
 [MIT License](LICENSE)로 배포합니다.

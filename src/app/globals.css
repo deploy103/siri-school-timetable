@@ -175,6 +175,40 @@ select { padding: 10px 38px 10px 13px; }
 .siri-callout small { color: #dcdcff; }
 .restoring { min-height: 70vh; display: grid; place-content: center; justify-items: center; color: var(--muted); }
 
+.teacher-page { --primary: #2859b8; --primary-dark: #1c448f; }
+.teacher-setup-card { margin-top: 16px; }
+.teacher-setup-card h2 { margin: 0; font-size: 1.14rem; }
+.fixed-school-option { min-height: 78px; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 16px; background: #f2f6ff; border: 2px solid var(--primary); border-radius: 14px; }
+.fixed-school-option > div { min-width: 0; display: flex; flex-direction: column; }
+.fixed-school-option small { color: var(--muted); }
+.teacher-subject-search { margin-bottom: 13px; }
+.teacher-loading { display: flex; align-items: center; gap: 8px; margin: 14px 2px; color: var(--muted); font-size: .9rem; }
+.teacher-check-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px; }
+.teacher-check-option { min-height: 50px; display: flex; align-items: flex-start; gap: 10px; padding: 12px; background: #fff; border: 1px solid var(--line); border-radius: 12px; line-height: 1.35; }
+.teacher-check-option:has(input:checked) { background: #f1f5ff; border-color: #7290dc; }
+.teacher-check-option input, .teacher-toggle input { width: 19px; min-height: 19px; margin: 1px 0 0; flex: 0 0 auto; accent-color: var(--primary); }
+.teacher-check-option span { min-width: 0; }
+.teacher-check-option small { display: block; margin-top: 3px; color: var(--muted); font-size: .75rem; }
+.candidate-groups { display: grid; gap: 14px; }
+.candidate-group { min-width: 0; margin: 0; padding: 15px; border: 1px solid var(--line); border-radius: 14px; }
+.candidate-group legend { padding: 0 7px; color: #283650; font-weight: 850; }
+.candidate-group .compact-empty { margin: 3px 0 0; }
+.class-option strong { color: var(--primary); }
+.teacher-toggle { margin-top: 18px; display: flex; align-items: flex-start; gap: 11px; padding: 15px; background: var(--soft); border-radius: 13px; }
+.teacher-toggle span { display: flex; flex-direction: column; }
+.teacher-toggle small { margin-top: 2px; color: var(--muted); }
+.inline-error button { margin-left: 8px; padding: 2px 6px; color: inherit; background: transparent; border: 0; text-decoration: underline; }
+.teacher-hero { background: linear-gradient(125deg, #173b7a, #2859a7 58%, #397880); box-shadow: 0 18px 38px rgba(23, 59, 122, .22); }
+.teacher-lesson-list li > div { min-width: 0; }
+.teacher-lesson-list li > div > span { color: var(--muted); font-size: .82rem; }
+.teacher-lesson-list li.ambiguous { background: #fff8eb; border-color: #e9bd68; }
+.teacher-lesson-list li.ambiguous .period-number { color: #8c5a00; background: #fff0cf; }
+.teacher-ambiguity { margin: 0 0 12px; padding: 12px 14px; color: #714b08; background: #fff5df; border: 1px solid #efd298; border-radius: 12px; font-size: .88rem; }
+.teacher-actions { margin-top: 16px; display: grid; grid-template-columns: 1fr 1fr; gap: 9px; }
+.danger-button { color: var(--danger); background: #fff; border-color: #efc4c0; }
+.danger-button:hover:not(:disabled) { background: #fff3f2; }
+.teacher-source-note { margin: 14px 3px 0; color: var(--muted); font-size: .79rem; text-align: center; }
+
 @keyframes spin { to { transform: rotate(360deg); } }
 @keyframes shimmer { to { background-position: -200% 0; } }
 
@@ -194,6 +228,8 @@ select { padding: 10px 38px 10px 13px; }
   .siri-button { grid-column: 1 / -1; width: 100%; }
   .dialog-backdrop { align-items: end; padding: 0; }
   .dialog-panel { max-height: 92dvh; padding: 20px 17px max(20px, env(safe-area-inset-bottom)); border-radius: 22px 22px 0 0; }
+  .teacher-check-list { grid-template-columns: 1fr; }
+  .teacher-actions { grid-template-columns: 1fr 1fr; }
 }
 
 @media (max-width: 350px) {
@@ -205,6 +241,7 @@ select { padding: 10px 38px 10px 13px; }
   .form-actions { flex-direction: column-reverse; }
   .url-box > div { flex-direction: column; }
   .copy-button { width: 100%; }
+  .teacher-actions { grid-template-columns: 1fr; }
 }
 
 @media (prefers-reduced-motion: reduce) {

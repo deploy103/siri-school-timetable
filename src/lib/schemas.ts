@@ -93,6 +93,48 @@ export const classQuerySchema = z.object({
   schoolCode: compactCode,
 });
 
+const teacherLabel = (label: string, max: number) => z
+  .string({ message: `${label}을 확인해 주세요.` })
+  .transform((value) => value.normalize("NFC").trim().replace(/\s+/gu, " "))
+  .pipe(z.string().min(1, `${label}을 확인해 주세요.`).max(max, `${label}이 너무 깁니다.`))
+  .refine((value) => !/[\u0000-\u001f\u007f]/u.test(value), {
+    message: `${label}에 사용할 수 없는 문자가 있습니다.`,
+  });
+
+export const teacherAssignmentSchema = z.object({
+  subject: teacherLabel("과목명", 100),
+  department: teacherLabel("학과명", 100),
+  grade: z.number().int().min(1).max(3),
+  className: teacherLabel("반 이름", 20),
+}).strict();
+
+export const teacherSettingsSchema = z.object({
+  v: z.literal(1),
+  assignments: z.array(teacherAssignmentSchema).min(1).max(40),
+  includeSubject: z.boolean(),
+}).strict();
+
+export const teacherAssignmentTupleSchema = z.tuple([
+  teacherLabel("과목명", 100),
+  teacherLabel("학과명", 100),
+  z.number().int().min(1).max(3),
+  teacherLabel("반 이름", 20),
+]);
+
+export const teacherProfileSchema = z.object({
+  v: z.literal(1),
+  assignments: z.array(teacherAssignmentTupleSchema).min(1).max(40),
+  includeSubject: z.boolean(),
+}).strict();
+
+export const teacherProfileQuerySchema = z.object({
+  p: z.string().min(1).max(8_192).regex(/^[A-Za-z0-9_-]+$/u),
+}).strict();
+
+export const teacherSubjectQuerySchema = z.object({
+  subject: teacherLabel("과목명", 100),
+}).strict();
+
 export function searchParamsToRecord(params: URLSearchParams): Record<string, string | undefined> {
   return {
     officeCode: params.get("officeCode") ?? undefined,

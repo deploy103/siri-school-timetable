@@ -3,6 +3,8 @@ import type { EducationOfficeCode } from "@/lib/education-offices";
 import { AppError } from "@/lib/errors";
 import type { Lesson, Meal, MealResponse, School, SchoolClass, SchoolKind, TimetableResponse } from "@/lib/types";
 import type { MealQuery, TimetableQuery } from "@/lib/schemas";
+import { formatKstLookupTime } from "@/lib/date";
+import { HANSEI_SCHOOL, normalizeSubjectName, type HanseiTimetableRow } from "@/lib/teacher-timetable";
 
 export const NEIS_BASE_URL = "https://open.neis.go.kr/hub";
 
@@ -82,7 +84,10 @@ const schoolCache = new MemoryCache<School[]>(200);
 const classCache = new MemoryCache<SchoolClass[]>(300);
 const timetableCache = new MemoryCache<TimetableResponse>(500);
 const mealCache = new MemoryCache<MealResponse>(500);
+const hanseiCatalogCache = new MemoryCache<HanseiTimetableRow[]>(8);
+const hanseiTodayCache = new MemoryCache<HanseiTodaySnapshot>(8);
 const MAX_RESPONSE_BYTES = 2_000_000;
+const MAX_PAGINATED_ROWS = 50_000;
 
 export function timetableDataset(kind: SchoolKind): string {
   return DATASETS[kind];
@@ -96,6 +101,22 @@ function isRecord(value: unknown): value is JsonRecord {
 
 function stringField(row: JsonRecord, key: string): string {
   return typeof row[key] === "string" ? row[key].trim() : "";
+}
+
+function listTotalCount(payload: unknown, datasetName: string): number | undefined {
+  if (!isRecord(payload)) return undefined;
+  const dataset = payload[datasetName];
+  if (!Array.isArray(dataset)) return undefined;
+  for (const section of dataset) {
+    if (!isRecord(section) || !Array.isArray(section.head)) continue;
+    for (const item of section.head) {
+      if (!isRecord(item)) continue;
+      const value = item.list_total_count;
+      const parsed = typeof value === "number" ? value : typeof value === "string" ? Number(value) : NaN;
+      if (Number.isSafeInteger(parsed) && parsed >= 0) return parsed;
+    }
+  }
+  return undefined;
 }
 
 function resultFrom(value: unknown): { code: string; message: string } | undefined {
@@ -251,6 +272,50 @@ export function parseLessons(rows: readonly JsonRecord[]): Lesson[] {
       ...(subjects.size > 1 ? { ambiguous: true } : {}),
     }))
     .sort((left, right) => left.period - right.period);
+}
+
+interface HanseiRowsRange {
+  from: string;
+  to: string;
+}
+
+export function parseHanseiTimetableRows(
+  rows: readonly JsonRecord[],
+  range: HanseiRowsRange,
+): HanseiTimetableRow[] {
+  const parsed: HanseiTimetableRow[] = [];
+  const from = range.from.replaceAll("-", "");
+  const to = range.to.replaceAll("-", "");
+  for (const row of rows) {
+    const officeCode = stringField(row, "ATPT_OFCDC_SC_CODE");
+    const schoolCode = stringField(row, "SD_SCHUL_CODE");
+    const date = stringField(row, "ALL_TI_YMD");
+    if (officeCode !== HANSEI_SCHOOL.officeCode || schoolCode !== HANSEI_SCHOOL.schoolCode) continue;
+    if (!/^\d{8}$/u.test(date) || date < from || date > to) continue;
+
+    const periodText = stringField(row, "PERIO");
+    const gradeText = stringField(row, "GRADE");
+    const rawSubject = stringField(row, "ITRT_CNTNT");
+    const rawDepartment = stringField(row, "DDDEP_NM");
+    const className = stringField(row, "CLASS_NM").normalize("NFC").replace(/\s+/gu, " ");
+    if (!/^\d{1,2}$/u.test(periodText) || !/^[1-3]$/u.test(gradeText)) continue;
+    const period = Number(periodText);
+    const grade = Number(gradeText);
+    const subject = normalizeSubjectName(rawSubject);
+    if (period < 1 || period > 20 || !subject || subject.length > 100) continue;
+    if (!rawDepartment || rawDepartment.length > 100 || !className || className.length > 20) continue;
+    if (/[\u0000-\u001f\u007f]/u.test(`${rawSubject}${rawDepartment}${className}`)) continue;
+    parsed.push({
+      period,
+      subject,
+      rawSubject,
+      department: rawDepartment,
+      rawDepartment,
+      grade,
+      className,
+    });
+  }
+  return parsed;
 }
 
 function splitNeisBreaks(value: string): string[] {
@@ -545,6 +610,23 @@ export class NeisClient {
     return { date, school: { name: schoolName }, meals };
   }
 
+  async getHanseiTimetableRows(from: string, to: string): Promise<HanseiTimetableRow[]> {
+    if (this.isMockMode) return mockHanseiRows();
+    this.assertConfigured();
+    const dateParameters: Record<string, string> = from === to
+      ? { ALL_TI_YMD: from.replaceAll("-", "") }
+      : {
+          TI_FROM_YMD: from.replaceAll("-", ""),
+          TI_TO_YMD: to.replaceAll("-", ""),
+        };
+    const rows = await this.requestAllRows("hisTimetable", {
+      ATPT_OFCDC_SC_CODE: HANSEI_SCHOOL.officeCode,
+      SD_SCHUL_CODE: HANSEI_SCHOOL.schoolCode,
+      ...dateParameters,
+    });
+    return parseHanseiTimetableRows(rows, { from, to });
+  }
+
   private assertConfigured(): void {
     if (this.apiKey.length === 0) {
       throw new AppError(
@@ -591,6 +673,36 @@ export class NeisClient {
       }
     }
     throw lastError;
+  }
+
+  private async requestAllRows(
+    dataset: string,
+    parameters: Readonly<Record<string, string>>,
+  ): Promise<JsonRecord[]> {
+    const pageSize = 1_000;
+    const first = await this.request(dataset, {
+      ...parameters,
+      pIndex: "1",
+      pSize: String(pageSize),
+    });
+    const rows = extractNeisRows(first, dataset);
+    const total = listTotalCount(first, dataset) ?? rows.length;
+    if (total > MAX_PAGINATED_ROWS) {
+      throw new AppError("NEIS_ERROR", 502, "교육정보 응답 건수가 허용 범위를 초과했습니다.");
+    }
+    const pageCount = Math.ceil(total / pageSize);
+    for (let page = 2; page <= pageCount; page += 1) {
+      const payload = await this.request(dataset, {
+        ...parameters,
+        pIndex: String(page),
+        pSize: String(pageSize),
+      });
+      rows.push(...extractNeisRows(payload, dataset));
+    }
+    if (rows.length < total) {
+      throw new AppError("NEIS_ERROR", 502, "교육정보의 전체 페이지를 확인하지 못했습니다.");
+    }
+    return rows.slice(0, total);
   }
 
   private async fetchJson(url: URL): Promise<unknown> {
@@ -686,9 +798,58 @@ export async function getSchoolClasses(
   );
 }
 
+export interface HanseiTodaySnapshot {
+  rows: HanseiTimetableRow[];
+  queriedAt: string;
+  queriedAtLabel: string;
+}
+
+export async function getHanseiCatalogRows(
+  from: string,
+  to: string,
+): Promise<HanseiTimetableRow[]> {
+  const key = `${from}:${to}`;
+  return hanseiCatalogCache.getOrLoad(key, 6 * 60 * 60_000, () =>
+    new NeisClient().getHanseiTimetableRows(from, to),
+  );
+}
+
+export async function getHanseiTodaySnapshot(date: string): Promise<HanseiTodaySnapshot> {
+  return hanseiTodayCache.getOrLoad(date, 60_000, async () => {
+    const rows = await new NeisClient().getHanseiTimetableRows(date, date);
+    const now = new Date();
+    return {
+      rows,
+      queriedAt: now.toISOString(),
+      queriedAtLabel: formatKstLookupTime(now),
+    };
+  });
+}
+
 export function clearNeisCaches(): void {
   schoolCache.clear();
   classCache.clear();
   timetableCache.clear();
   mealCache.clear();
+  hanseiCatalogCache.clear();
+  hanseiTodayCache.clear();
+}
+
+function mockHanseiRows(): HanseiTimetableRow[] {
+  const values = [
+    [2, "클라우드 보안", "클라우드보안과", 1, "2"],
+    [3, "클라우드 보안", "클라우드보안과", 2, "1"],
+    [4, "네트워크 보안", "메타버스게임과", 2, "1"],
+    [6, "시스템 보안", "지능형소프트웨어과", 1, "1"],
+    [5, "클라우드 보안", "클라우드보안과", 2, "2"],
+  ] as const;
+  return values.map(([period, subject, department, grade, className]) => ({
+    period,
+    subject,
+    rawSubject: subject,
+    department,
+    rawDepartment: department,
+    grade,
+    className,
+  }));
 }

@@ -76,3 +76,33 @@ test("vocational schools keep same-number classes separated by department", asyn
   await page.getByRole("button", { name: "Siri 설정" }).click();
   await expect(page.getByLabel("내 시간표 주소")).toHaveValue(/department=%EC%BD%98%ED%85%90%EC%B8%A0%EA%B3%BC/);
 });
+
+test("Hansei teacher setup, timetable, persistence, and Siri flow", async ({ page }) => {
+  await page.goto("/hansei-t");
+  await expect(page).toHaveTitle(/한세 교사용 시간표/);
+  await expect(page.locator('meta[name="robots"]')).toHaveAttribute("content", /noindex/);
+  await expect(page.getByRole("heading", { name: "한세 교사용 시간표" })).toBeVisible();
+  await expect(page.getByText("서울특별시교육청 · 고등학교")).toBeVisible();
+
+  await page.getByRole("checkbox", { name: "클라우드 보안" }).check();
+  const candidate = page.getByRole("checkbox", { name: /클보 2학년 1반/ });
+  await expect(candidate).not.toBeChecked();
+  await candidate.check();
+  await page.getByRole("button", { name: "설정 저장" }).click();
+
+  await expect(page.getByText("클보 2학년 1반", { exact: true })).toBeVisible();
+  await expect(page.getByText("클라우드 보안", { exact: true })).toBeVisible();
+  await page.reload();
+  await expect(page.getByText("클보 2학년 1반", { exact: true })).toBeVisible();
+
+  await page.getByRole("button", { name: "Siri 설정" }).click();
+  const dialog = page.getByRole("dialog", { name: "교사용 Siri 설정" });
+  await expect(dialog.getByLabel("교사용 시간표 주소")).toHaveValue(/\/api\/voice\/teacher-timetable\?p=/);
+  await expect(dialog).toContainText("시리야, 학교 수업");
+  await page.keyboard.press("Escape");
+
+  const hasHorizontalOverflow = await page.evaluate(
+    () => document.documentElement.scrollWidth > document.documentElement.clientWidth,
+  );
+  expect(hasHorizontalOverflow).toBe(false);
+});

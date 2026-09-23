@@ -13,6 +13,10 @@ Time Siri는 로그인이나 데이터베이스 없이 학교·학년·반을 �
 
 iPhone 단축어 ── same-origin text/plain ──> /api/voice/timetable
               └─ same-origin text/plain ──> /api/voice/meal
+
+한세 교사용 화면(`/hansei-t`)
+      ├─ 별도 localStorage(과목 + 학과 + 학년 + 반)
+      └─ 고정 학교 전체 시간표 1회 조회 ──> 서버에서 완전 일치 필터
 ```
 
 ## 주요 흐름
@@ -35,6 +39,10 @@ iPhone 단축어 ── same-origin text/plain ──> /api/voice/timetable
 | `/api/voice/timetable?...` | UTF-8 text | 짧은 서버 캐시 | 시간표용 제한 |
 | `/api/meal/today?officeCode=&schoolCode=` | JSON | 학교·날짜별 10분 서버 캐시 + private 캐시 헤더 | 조회용 제한 |
 | `/api/voice/meal?officeCode=&schoolCode=` | UTF-8 text | 같은 급식 서버 캐시 | 음성용 제한 |
+| `/api/hansei-t/subjects` | JSON | 학기 범위 6시간 서버 캐시 | 조회용 제한 |
+| `/api/hansei-t/assignment-candidates?subject=` | JSON | 같은 학기 범위 캐시 | 조회용 제한 |
+| `/api/hansei-t/timetable?p=` | JSON | 오늘 전체 학교 시간표 60초 서버 캐시 | 조회용 제한 |
+| `/api/voice/teacher-timetable?p=` | UTF-8 text | 같은 60초 서버 캐시, 응답은 `no-store` | 음성용 제한 |
 
 시간표의 공통 쿼리 파라미터는 `officeCode`, `schoolCode`, `kind`, `grade`, `className`이다. 오류 JSON은 `{ "error": { "code": "...", "message": "..." } }` 형태이며 스택, 원본 NEIS 본문, API 키를 포함하지 않는다.
 
