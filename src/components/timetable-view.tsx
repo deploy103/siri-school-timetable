@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { RefreshIcon, SettingsIcon, SpeakerIcon } from "@/components/icons";
+import { GuideIcon, RefreshIcon, SettingsIcon, SpeakerIcon } from "@/components/icons";
 import { SiriDialog } from "@/components/siri-dialog";
 import type { ApiErrorBody, SchoolSettings, Timetable } from "@/types/client";
 
@@ -9,6 +9,9 @@ interface Props {
   settings: SchoolSettings;
   onChangeSettings: () => void;
   onShowMeal?: () => void;
+  onShowGuide?: () => void;
+  openSiriOnMount?: boolean;
+  onSiriAutoOpened?: () => void;
 }
 
 const koreanDate = new Intl.DateTimeFormat("ko-KR", {
@@ -32,12 +35,17 @@ async function apiError(response: Response): Promise<Error> {
   }
 }
 
-export function TimetableView({ settings, onChangeSettings, onShowMeal }: Props) {
+export function TimetableView({ settings, onChangeSettings, onShowMeal, onShowGuide, openSiriOnMount, onSiriAutoOpened }: Props) {
   const [timetable, setTimetable] = useState<Timetable | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [siriOpen, setSiriOpen] = useState(false);
+  const [siriOpen, setSiriOpen] = useState(() => Boolean(openSiriOnMount));
   const [isSpeaking, setIsSpeaking] = useState(false);
+
+  useEffect(() => {
+    if (openSiriOnMount) onSiriAutoOpened?.();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const query = useMemo(() => {
     const params = new URLSearchParams({
@@ -98,7 +106,12 @@ export function TimetableView({ settings, onChangeSettings, onShowMeal }: Props)
     <main className="page-shell timetable-page">
       <header className="app-header">
         <a className="brand" href="#main-content" aria-label="오늘의 시간표 홈">오늘의 시간표</a>
-        <button className="button header-settings" type="button" onClick={onChangeSettings}><SettingsIcon />설정 변경</button>
+        <div className="app-header-actions">
+          {onShowGuide && (
+            <button className="button header-settings" type="button" onClick={onShowGuide}><GuideIcon />가이드 다시 보기</button>
+          )}
+          <button className="button header-settings" type="button" onClick={onChangeSettings}><SettingsIcon />설정 변경</button>
+        </div>
       </header>
 
       <nav className="view-tabs" aria-label="오늘 학교 정보">

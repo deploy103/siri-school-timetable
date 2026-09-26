@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 420" role="img" aria-labelledby="t1 d1">
+  <title id="t1">단축어 앱 열기</title>
+  <desc id="d1">아이폰 홈 화면에서 단축어 앱 아이콘을 찾아 누르는 모습을 나타낸 자체 제작 안내 그림</desc>
+  <rect width="320" height="420" fill="#f4f7fc" rx="20"/>
+  <rect x="60" y="24" width="200" height="372" rx="34" fill="#ffffff" stroke="#dfe5f1" stroke-width="3"/>
+  <rect x="130" y="38" width="60" height="10" rx="5" fill="#dfe5f1"/>
+  <g font-family="sans-serif">
+    <g>
+      <rect x="82" y="70" width="52" height="52" rx="14" fill="#e7ecfa"/>
+      <rect x="146" y="70" width="52" height="52" rx="14" fill="#e7ecfa"/>
+      <rect x="210" y="70" width="20" height="52" rx="10" fill="none"/>
+      <rect x="82" y="134" width="52" height="52" rx="14" fill="#e7ecfa"/>
+      <rect x="146" y="134" width="52" height="52" rx="14" fill="#3157d5"/>
+      <text x="172" y="165" font-size="22" fill="#fff" text-anchor="middle">단</text>
+    </g>
+    <circle cx="172" cy="160" r="40" fill="none" stroke="#7657d6" stroke-width="3" stroke-dasharray="6 5"/>
+    <path d="M172 210 v34" stroke="#7657d6" stroke-width="4" fill="none" stroke-linecap="round" marker-end="url(#arrow1)"/>
+    <defs>
+      <marker id="arrow1" markerWidth="10" markerHeight="10" refX="5" refY="5" orient="auto">
+        <path d="M0 0 L10 5 L0 10 Z" fill="#7657d6"/>
+      </marker>
+    </defs>
+    <rect x="86" y="252" width="172" height="30" rx="15" fill="#fff" stroke="#7657d6" stroke-width="2"/>
+    <text x="172" y="272" font-size="14" fill="#7657d6" text-anchor="middle" font-weight="700">단축어 앱</text>
+    <rect x="86" y="330" width="172" height="46" rx="12" fill="#eef1fb"/>
+    <text x="172" y="358" font-size="13" fill="#65718b" text-anchor="middle">이 아이콘을 눌러 앱을 여세요</text>
+  </g>
+</svg>

@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { FormEvent, ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { CheckIcon, SearchIcon } from "@/components/icons";
 import { EDUCATION_OFFICES } from "@/lib/education-offices";
 import type {
@@ -16,6 +16,7 @@ interface Props {
   initialSettings?: SchoolSettings | null;
   onSave: (settings: SchoolSettings) => void;
   onCancel?: () => void;
+  onboardingBanner?: ReactNode;
 }
 
 function gradeLimit(school: School): number {
@@ -31,7 +32,7 @@ async function readError(response: Response): Promise<string> {
   }
 }
 
-export function SchoolSetup({ initialSettings, onSave, onCancel }: Props) {
+export function SchoolSetup({ initialSettings, onSave, onCancel, onboardingBanner }: Props) {
   const [officeCode, setOfficeCode] = useState(initialSettings?.school.officeCode ?? "");
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<School[]>([]);
@@ -200,6 +201,8 @@ export function SchoolSetup({ initialSettings, onSave, onCancel }: Props) {
         <h1>{initialSettings ? "학교 설정 변경" : "내 학교를 알려주세요"}</h1>
         <p>학교와 학년, 반을 한 번만 설정하면 다음부터 바로 오늘 시간표를 볼 수 있어요.</p>
       </header>
+
+      {onboardingBanner}
 
       <section className="card setup-card" aria-labelledby="school-search-heading">
         <div className="setup-section-heading">

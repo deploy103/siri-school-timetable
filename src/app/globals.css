@@ -93,6 +93,7 @@ select { padding: 10px 38px 10px 13px; }
 
 .app-header { min-height: 54px; display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 25px; }
 .brand { display: flex; align-items: center; gap: 10px; color: var(--ink); font-weight: 850; text-decoration: none; }
+.app-header-actions { display: flex; align-items: center; gap: 4px; }
 .header-settings { padding: 8px 12px; color: #4e5b72; background: transparent; border-color: transparent; font-size: .9rem; }
 .header-settings:hover { background: #fff; }
 .view-tabs { margin: -10px 0 18px; padding: 4px; display: grid; grid-template-columns: 1fr 1fr; gap: 4px; background: #e9edf5; border-radius: 13px; }
@@ -209,6 +210,51 @@ select { padding: 10px 38px 10px 13px; }
 .danger-button:hover:not(:disabled) { background: #fff3f2; }
 .teacher-source-note { margin: 14px 3px 0; color: var(--muted); font-size: .79rem; text-align: center; }
 
+.onboarding-card { margin-bottom: 18px; border: 1px solid #d9d0f7; background: #faf8ff; }
+.onboarding-badge { background: var(--purple); }
+.onboarding-steps { margin: 4px 0 20px; }
+.onboarding-actions { display: flex; flex-wrap: wrap; gap: 9px; }
+.onboarding-actions .button { flex: 1; min-width: 160px; }
+
+.guide-page { max-width: 760px; }
+.guide-section { margin-top: 18px; }
+.guide-section h2 { margin: 0 0 10px; font-size: 1.2rem; }
+.guide-section > p { color: var(--muted); }
+.guide-version-note { margin: -4px 0 18px; padding: 9px 12px; color: #5f526c; background: #f8f3ff; border-radius: 10px; font-size: .82rem; }
+.quick-guide-list { margin: 0 0 16px; padding-left: 22px; display: grid; gap: 8px; color: var(--ink); font-weight: 650; }
+.quick-guide-list li::marker { color: var(--primary); font-weight: 850; }
+
+.guide-step-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+.guide-step-card { padding: 14px; background: #fff; border: 1px solid var(--line); border-radius: 16px; }
+.guide-step-card h3 { margin: 12px 0 4px; font-size: 1rem; }
+.guide-step-summary { margin: 0 0 6px; color: #3b465e; font-size: .88rem; font-weight: 650; }
+.guide-step-detail { margin: 0; color: var(--muted); font-size: .85rem; }
+.guide-image-button { display: block; width: 100%; padding: 0; background: none; border: 1px solid var(--line); border-radius: 12px; overflow: hidden; position: relative; }
+.guide-image-button img { display: block; width: 100%; height: auto; }
+.guide-image-zoom-hint { position: absolute; right: 8px; bottom: 8px; padding: 4px 9px; color: #fff; background: rgba(23, 32, 51, .7); border-radius: 999px; font-size: .68rem; font-weight: 700; }
+.guide-lightbox { width: min(100%, 420px); }
+.guide-lightbox-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 14px; }
+.guide-lightbox-header p { margin: 0; font-weight: 750; }
+.guide-lightbox-image { width: 100%; height: auto; border-radius: 14px; }
+
+.voice-phrase-list { display: grid; gap: 10px; }
+.voice-phrase-box { padding: 14px 16px; background: var(--soft); border-radius: 13px; }
+.voice-phrase-label { display: block; margin-bottom: 3px; color: var(--primary); font-size: .78rem; font-weight: 800; }
+.voice-phrase-box strong { font-size: 1.05rem; }
+
+.scenario-grid { display: grid; gap: 16px; }
+.scenario-card { padding: 16px; background: #fff; border: 1px solid var(--line); border-radius: 16px; }
+.scenario-card h3 { margin: 0 0 10px; font-size: 1.02rem; }
+.troubleshoot-checklist { margin: 0 0 16px; padding-left: 20px; display: grid; gap: 7px; color: #3b465e; font-size: .89rem; }
+
+.faq-list { display: grid; gap: 8px; }
+.faq-list details { padding: 13px 16px; background: #fff; border: 1px solid var(--line); border-radius: 13px; }
+.faq-list summary { cursor: pointer; font-weight: 750; list-style: none; }
+.faq-list summary::-webkit-details-marker { display: none; }
+.faq-list summary::before { content: "+ "; color: var(--primary); }
+.faq-list details[open] summary::before { content: "− "; }
+.faq-list details p { margin: 10px 0 0; color: var(--muted); font-size: .89rem; }
+
 @keyframes spin { to { transform: rotate(360deg); } }
 @keyframes shimmer { to { background-position: -200% 0; } }
 
@@ -230,6 +276,9 @@ select { padding: 10px 38px 10px 13px; }
   .dialog-panel { max-height: 92dvh; padding: 20px 17px max(20px, env(safe-area-inset-bottom)); border-radius: 22px 22px 0 0; }
   .teacher-check-list { grid-template-columns: 1fr; }
   .teacher-actions { grid-template-columns: 1fr 1fr; }
+  .app-header-actions { flex-wrap: wrap; justify-content: flex-end; gap: 2px; }
+  .onboarding-actions .button { min-width: 0; }
+  .guide-step-grid { grid-template-columns: 1fr; }
 }
 
 @media (max-width: 350px) {

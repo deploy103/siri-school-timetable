@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 420" role="img" aria-labelledby="t6 d6">
+  <title id="t6">Safari에서 주소 직접 열어 테스트</title>
+  <desc id="d6">Safari 주소창에 단축어에 넣은 음성 API 주소를 직접 입력해 정상적으로 문장이 나오는지 확인하는 모습을 나타낸 자체 제작 안내 그림</desc>
+  <rect width="320" height="420" fill="#f4f7fc" rx="20"/>
+  <rect x="60" y="24" width="200" height="372" rx="34" fill="#ffffff" stroke="#dfe5f1" stroke-width="3"/>
+  <rect x="130" y="38" width="60" height="10" rx="5" fill="#dfe5f1"/>
+  <g font-family="sans-serif">
+    <rect x="80" y="66" width="184" height="34" rx="17" fill="#eef1fb"/>
+    <circle cx="98" cy="83" r="8" fill="#3157d5"/>
+    <path d="M94 83a4 4 0 1 1 8 0" fill="none" stroke="#fff" stroke-width="1.5"/>
+    <text x="176" y="88" font-size="10" fill="#4e5c74" text-anchor="middle" font-family="ui-monospace, monospace">.../api/voice/timetable?...</text>
+    <path d="M172 108 v18" stroke="#7657d6" stroke-width="4" fill="none" stroke-linecap="round" marker-end="url(#arrow6)"/>
+    <defs>
+      <marker id="arrow6" markerWidth="10" markerHeight="10" refX="5" refY="5" orient="auto">
+        <path d="M0 0 L10 5 L0 10 Z" fill="#7657d6"/>
+      </marker>
+    </defs>
+    <rect x="86" y="134" width="172" height="86" rx="12" fill="#fff" stroke="#dfe5f1" stroke-width="2"/>
+    <text x="172" y="160" font-size="11" fill="#172033" text-anchor="middle" font-weight="700">오늘 시간표는</text>
+    <text x="172" y="178" font-size="11" fill="#172033" text-anchor="middle" font-weight="700">1교시 수학, 2교시 영어,</text>
+    <text x="172" y="196" font-size="11" fill="#172033" text-anchor="middle" font-weight="700">3교시 체육입니다.</text>
+    <circle cx="240" cy="206" r="12" fill="#eafff2"/>
+    <path d="M234 206 l4 4 8-8" stroke="#1a9a5c" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+    <rect x="86" y="330" width="172" height="46" rx="12" fill="#eef1fb"/>
+    <text x="172" y="352" font-size="12" fill="#65718b" text-anchor="middle">이렇게 문장이 그대로 보이면</text>
+    <text x="172" y="368" font-size="12" fill="#65718b" text-anchor="middle">서버는 정상, 단축어 설정을 다시 확인</text>
+  </g>
+</svg>

@@ -123,4 +123,48 @@ describe("HomePage", () => {
     await waitFor(() => expect(JSON.parse(window.localStorage.getItem(STORAGE_KEY) ?? "null")).toEqual({ school, grade: 3, className: "4" }));
     expect(fetchMock).toHaveBeenNthCalledWith(1, "/api/schools?name=%EC%83%88%ED%95%99%EA%B5%90&officeCode=B10");
   });
+
+  it("shows the onboarding banner when no settings are saved and hides it once dismissed", async () => {
+    window.localStorage.clear();
+    const user = userEvent.setup();
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({ schools: [] }), { status: 200 })));
+    render(<HomePage />);
+
+    expect(await screen.findByRole("heading", { name: "처음 쓰는 경우 여기부터 따라하면 됨" })).toBeVisible();
+    await user.click(screen.getByRole("button", { name: "이미 설정했어요" }));
+    expect(screen.queryByRole("heading", { name: "처음 쓰는 경우 여기부터 따라하면 됨" })).not.toBeInTheDocument();
+  });
+
+  it("opens the Siri dialog automatically right after the very first setup save", async () => {
+    window.localStorage.clear();
+    const user = userEvent.setup();
+    const school = { ...settings.school, name: "새학교" };
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ schools: [school] }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ classes: [
+        { grade: 3, className: "4" },
+      ] }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ ...timetable, school: { name: "새학교", kind: "중학교" } }), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+    render(<HomePage />);
+
+    await user.selectOptions(await screen.findByLabelText("지역"), "B10");
+    await user.type(await screen.findByLabelText("학교 이름"), "새학교");
+    await user.click(screen.getByRole("button", { name: "검색" }));
+    await user.click(await screen.findByRole("button", { name: /새학교/ }));
+    await waitFor(() => expect(screen.getByLabelText("학년")).toHaveValue("3"));
+    await user.selectOptions(screen.getByLabelText("반"), "4");
+    await user.click(screen.getByRole("button", { name: "설정 저장하고 시간표 보기" }));
+
+    expect(await screen.findByRole("dialog", { name: "Siri로 학교 정보 듣기" })).toBeVisible();
+  });
+
+  it("lets the student reopen the onboarding guide from the timetable header", async () => {
+    const user = userEvent.setup();
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify(timetable), { status: 200 })));
+    render(<HomePage />);
+
+    await user.click(await screen.findByRole("button", { name: "가이드 다시 보기" }));
+    expect(await screen.findByRole("heading", { name: "처음 쓰는 경우 여기부터 따라하면 됨" })).toBeVisible();
+  });
 });

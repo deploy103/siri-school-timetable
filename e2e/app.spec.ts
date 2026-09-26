@@ -19,6 +19,11 @@ test("mobile-first setup, timetable, persistence, and Siri flow", async ({ page 
   await page.getByLabel("반", { exact: true }).selectOption("1");
   await page.getByRole("button", { name: "설정 저장하고 시간표 보기" }).click();
 
+  const firstSaveSiriDialog = page.getByRole("dialog", { name: "Siri로 학교 정보 듣기" });
+  await expect(firstSaveSiriDialog).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(firstSaveSiriDialog).toBeHidden();
+
   await expect(page.getByRole("heading", { name: "부산미래중학교" })).toBeVisible();
   await expect(page.getByText("자료구조", { exact: true })).toBeVisible();
   await expect(page.getByRole("listitem").first()).toContainText("1교시");
@@ -73,8 +78,12 @@ test("vocational schools keep same-number classes separated by department", asyn
   await page.getByRole("button", { name: "설정 저장하고 시간표 보기" }).click();
 
   await expect(page.getByText("콘텐츠과 · 2학년 3반")).toBeVisible();
-  await page.getByRole("button", { name: "Siri 설정" }).click();
+
+  const autoOpenedDialog = page.getByRole("dialog", { name: "Siri로 학교 정보 듣기" });
+  await expect(autoOpenedDialog).toBeVisible();
   await expect(page.getByLabel("내 시간표 주소")).toHaveValue(/department=%EC%BD%98%ED%85%90%EC%B8%A0%EA%B3%BC/);
+  await page.keyboard.press("Escape");
+  await expect(autoOpenedDialog).toBeHidden();
 });
 
 test("Hansei teacher setup, timetable, persistence, and Siri flow", async ({ page }) => {

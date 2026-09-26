@@ -132,6 +132,8 @@ URL
 
 시간표 단축어는 `오늘 학교 시간표 뭐야`, 급식 단축어는 `오늘 학교 급식 뭐야`로 각각 저장한다. 웹사이트가 단축어를 자동 설치하거나 Siri에 자동 등록하지는 않는다. 자세한 내용은 [docs/SIRI_SETUP.md](docs/SIRI_SETUP.md)를 참고한다.
 
+처음 쓰는 학생을 위한 이미지 기반 단계별 가이드는 서비스 안 `/guide` 페이지에 있다. 설정이 안 된 상태로 접속하면 이 가이드가 자동으로 안내되고, 시간표·급식 화면 상단 **가이드 다시 보기** 버튼으로 언제든 다시 볼 수 있다. 가이드 이미지 제작 방식은 [docs/GUIDE_ASSETS.md](docs/GUIDE_ASSETS.md)를 참고한다.
+
 ## API
 
 ```text
@@ -157,7 +159,7 @@ src/components/       설정·시간표·Siri UI
 src/lib/              NEIS 클라이언트, 검증, 캐시, Rate Limit, 날짜/음성 변환
 src/test/             테스트 공통 설정
 docs/                 조사, 설계, Siri, 보안 문서
-public/               정적 파일
+public/               정적 파일 (public/guide/는 가이드 페이지용 단계별 안내 이미지)
 Dockerfile            production standalone 이미지
 docker-compose.yml    로컬/단일 서버 실행 정의
 ```

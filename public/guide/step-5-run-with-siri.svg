@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 420" role="img" aria-labelledby="t5 d5">
+  <title id="t5">Siri로 실행하기</title>
+  <desc id="d5">시리를 부른 뒤 저장한 문구를 말해서 단축어를 실행하는 모습을 나타낸 자체 제작 안내 그림</desc>
+  <rect width="320" height="420" fill="#f4f7fc" rx="20"/>
+  <rect x="60" y="24" width="200" height="372" rx="34" fill="#101425" stroke="#dfe5f1" stroke-width="3"/>
+  <rect x="130" y="38" width="60" height="10" rx="5" fill="#2a3050"/>
+  <g font-family="sans-serif">
+    <circle cx="172" cy="150" r="54" fill="url(#siriGrad)"/>
+    <defs>
+      <radialGradient id="siriGrad" cx="35%" cy="30%" r="80%">
+        <stop offset="0%" stop-color="#9c7bff"/>
+        <stop offset="60%" stop-color="#5a6bff"/>
+        <stop offset="100%" stop-color="#3157d5"/>
+      </radialGradient>
+    </defs>
+    <g stroke="#fff" stroke-width="3" stroke-linecap="round">
+      <line x1="150" y1="140" x2="150" y2="164"/>
+      <line x1="162" y1="128" x2="162" y2="176"/>
+      <line x1="174" y1="118" x2="174" y2="186"/>
+      <line x1="186" y1="132" x2="186" y2="172"/>
+      <line x1="198" y1="144" x2="198" y2="160"/>
+    </g>
+    <rect x="80" y="228" width="184" height="70" rx="16" fill="#1c2138"/>
+    <text x="172" y="252" font-size="12" fill="#c7cdfa" text-anchor="middle" font-weight="700">“시리야,</text>
+    <text x="172" y="270" font-size="12" fill="#ffffff" text-anchor="middle" font-weight="700">오늘 학교 시간표 뭐야?”</text>
+    <text x="172" y="288" font-size="10" fill="#8b93c2" text-anchor="middle">→ 오늘 시간표를 소리 내어 읽어줘요</text>
+    <rect x="86" y="330" width="172" height="46" rx="12" fill="#232847"/>
+    <text x="172" y="358" font-size="12" fill="#c7cdfa" text-anchor="middle">먼저 단축어 앱에서 직접 눌러 확인해보세요</text>
+  </g>
+</svg>

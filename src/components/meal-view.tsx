@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { RefreshIcon, SettingsIcon } from "@/components/icons";
+import { GuideIcon, RefreshIcon, SettingsIcon } from "@/components/icons";
 import { SiriDialog } from "@/components/siri-dialog";
 import type { ApiErrorBody, MealsToday, SchoolSettings } from "@/types/client";
 
@@ -9,6 +9,7 @@ interface Props {
   settings: SchoolSettings;
   onChangeSettings: () => void;
   onShowTimetable: () => void;
+  onShowGuide?: () => void;
 }
 
 const koreanDate = new Intl.DateTimeFormat("ko-KR", {
@@ -32,7 +33,7 @@ async function apiError(response: Response): Promise<Error> {
   }
 }
 
-export function MealView({ settings, onChangeSettings, onShowTimetable }: Props) {
+export function MealView({ settings, onChangeSettings, onShowTimetable, onShowGuide }: Props) {
   const [data, setData] = useState<MealsToday | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -71,7 +72,12 @@ export function MealView({ settings, onChangeSettings, onShowTimetable }: Props)
     <main className="page-shell timetable-page">
       <header className="app-header">
         <a className="brand" href="#main-content" aria-label="오늘의 급식 홈">오늘의 시간표</a>
-        <button className="button header-settings" type="button" onClick={onChangeSettings}><SettingsIcon />설정 변경</button>
+        <div className="app-header-actions">
+          {onShowGuide && (
+            <button className="button header-settings" type="button" onClick={onShowGuide}><GuideIcon />가이드 다시 보기</button>
+          )}
+          <button className="button header-settings" type="button" onClick={onChangeSettings}><SettingsIcon />설정 변경</button>
+        </div>
       </header>
 
       <nav className="view-tabs" aria-label="오늘 학교 정보">

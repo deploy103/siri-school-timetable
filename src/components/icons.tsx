@@ -41,3 +41,11 @@ export function CloseIcon(props: IconProps) {
 export function CheckIcon(props: IconProps) {
   return <svg {...base} {...props}><path d="m5 12 4 4L19 6" /></svg>;
 }
+
+export function GuideIcon(props: IconProps) {
+  return <svg {...base} {...props}><circle cx="12" cy="12" r="9" /><path d="M12 17v.01M12 14c0-2 2.5-2 2.5-4.2A2.5 2.5 0 0 0 12 7a2.5 2.5 0 0 0-2.45 2" /></svg>;
+}
+
+export function ArrowRightIcon(props: IconProps) {
+  return <svg {...base} {...props}><path d="M5 12h14M13 6l6 6-6 6" /></svg>;
+}
