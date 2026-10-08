@@ -22,6 +22,10 @@ final class PreviewTransport: URLProtocol {
         var status = 200
         switch path {
         case "/api/health":
+            if arguments.contains("--fail-connection") {
+                client?.urlProtocol(self, didFailWithError: URLError(.notConnectedToInternet))
+                return
+            }
             body = #"{"status":"ok","neis":{"mode":"mock"}}"#
         case "/api/schools":
             body = #"{"schools":[{"officeCode":"B10","schoolCode":"7010911","name":"테스트고등학교","kind":"고등학교","address":"서울특별시 마포구","region":"서울"}]}"#

@@ -83,13 +83,7 @@ enum SchoolPreferences {
         if let school { defaults.set(try JSONEncoder().encode(school), forKey: schoolKey) }
         else { defaults.removeObject(forKey: schoolKey) }
     }
-    static func server(defaults: UserDefaults = .standard) -> String {
-        let configured = Bundle.main.object(forInfoDictionaryKey: "SchoolAPIBaseURL") as? String ?? ""
-        #if DEBUG
-        return defaults.string(forKey: serverKey) ?? configured
-        #else
-        // A shipping app must not inherit a development server override.
-        return configured
-        #endif
+    static func server() -> String {
+        Bundle.main.object(forInfoDictionaryKey: "SchoolAPIBaseURL") as? String ?? ""
     }
 }

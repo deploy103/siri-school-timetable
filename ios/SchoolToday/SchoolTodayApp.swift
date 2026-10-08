@@ -11,7 +11,8 @@ struct SchoolTodayApp: App {
             if ProcessInfo.processInfo.arguments.contains("--reset-settings") {
                 defaults.removePersistentDomain(forName: "schooltoday.ui-tests")
             }
-            _store = StateObject(wrappedValue: SchoolStore(defaults: defaults, session: PreviewTransport.session))
+            let server = ProcessInfo.processInfo.arguments.contains("--missing-server") ? "" : "https://fixture.invalid"
+            _store = StateObject(wrappedValue: SchoolStore(defaults: defaults, session: PreviewTransport.session, server: server))
             return
         }
         #endif
@@ -33,11 +34,12 @@ final class SchoolStore: ObservableObject {
     let defaults: UserDefaults
     let session: URLSession
     private let monitor = NWPathMonitor()
-    var server: String { SchoolPreferences.server(defaults: defaults) }
+    let server: String
 
-    init(defaults: UserDefaults = .standard, session: URLSession = .shared) {
+    init(defaults: UserDefaults = .standard, session: URLSession = .shared, server: String = SchoolPreferences.server()) {
         self.defaults = defaults
         self.session = session
+        self.server = server
         school = SchoolPreferences.readSchool(defaults: defaults)
         monitor.pathUpdateHandler = { [weak self] path in
             Task { @MainActor in self?.online = path.status == .satisfied }
@@ -46,7 +48,7 @@ final class SchoolStore: ObservableObject {
     }
     deinit { monitor.cancel() }
 
-    func connect(server: String) async throws {
+    func connect() async throws {
         let candidate = try SchoolAPI(server: server, session: session)
         let health = try await candidate.health()
         guard ["live", "mock"].contains(health.neis.mode) else {
@@ -60,12 +62,6 @@ final class SchoolStore: ObservableObject {
     func saveSchool(_ settings: SchoolSettings?) throws {
         try SchoolPreferences.writeSchool(settings, defaults: defaults)
         school = settings
-    }
-    func disconnect() throws {
-        try saveSchool(nil)
-        defaults.removeObject(forKey: SchoolPreferences.serverKey)
-        api = nil
-        mode = ""
     }
 }
 
@@ -106,7 +102,6 @@ struct DemoNotice: View {
 
 struct ConnectionView: View {
     @EnvironmentObject private var store: SchoolStore
-    @State private var address = ""
     @State private var error: String?
     @State private var loading = false
     @State private var attempt = 0
@@ -120,41 +115,25 @@ struct ConnectionView: View {
                 Text("학교 시간표와 급식을 확인하고 Siri로 바로 물어보세요.")
             }
             Section {
-                #if DEBUG
-                TextField("https://서버주소", text: $address)
-                    .textInputAutocapitalization(.never).autocorrectionDisabled().keyboardType(.URL)
-                    .accessibilityIdentifier("server-address")
-                Button(loading ? "연결 중…" : "서버 연결") { attempt += 1 }
-                    .disabled(loading).accessibilityIdentifier("connect-server")
-                #else
                 if loading { ProgressView("학교 정보를 준비하고 있어요") }
-                if address.isEmpty {
+                if store.server.isEmpty {
                     Text("서비스 연결이 아직 준비되지 않았습니다.")
-                } else {
-                    Button("다시 연결") { attempt += 1 }.disabled(loading)
+                } else if error != nil {
+                    Button("다시 시도") { attempt += 1 }.disabled(loading)
                 }
-                #endif
                 if let error { Text(error).foregroundStyle(.red).accessibilityIdentifier("connection-error") }
             } header: {
-                Text("학교 정보 서버 연결")
+                Text("학교 정보 연결")
             } footer: {
-                #if DEBUG
-                Text("현재 개발 빌드입니다. NEIS 키는 서버에만 보관하며 앱에 입력하지 않습니다. 출시 빌드에는 운영 서버 주소를 지정해야 합니다.")
-                #else
                 Text("학교 정보를 확인하려면 인터넷 연결이 필요합니다.")
-                #endif
             }
         }
         .navigationTitle("시작하기")
-        .task {
-            address = store.server
-            if !address.isEmpty { attempt += 1 }
-        }
         .task(id: attempt) {
-            guard attempt > 0 else { return }
+            guard !store.server.isEmpty else { return }
             loading = true; error = nil
             defer { loading = false }
-            do { try await store.connect(server: address) }
+            do { try await store.connect() }
             catch { if !Task.isCancelled { self.error = error.localizedDescription } }
         }
     }
@@ -262,15 +241,14 @@ struct SettingsView: View {
             Section("데이터와 개인정보") {
                 DemoNotice()
                 Text("인터넷 연결이 필요합니다. 학교 설정은 이 기기에 저장됩니다. NEIS 키와 Apple 로그인 정보는 앱에 저장하지 않습니다.")
-                Text(store.server).font(.caption).textSelection(.enabled)
-                Button("서버 및 학교 설정 초기화", role: .destructive) { reset = true }
+                Button("학교 설정 초기화", role: .destructive) { reset = true }
                 if let error { Text(error).foregroundStyle(.red) }
             }
         }
         .navigationTitle("설정")
-        .confirmationDialog("저장된 서버와 학교 설정을 삭제할까요?", isPresented: $reset, titleVisibility: .visible) {
+        .confirmationDialog("저장된 학교 설정을 삭제할까요?", isPresented: $reset, titleVisibility: .visible) {
             Button("설정 삭제", role: .destructive) {
-                do { try store.disconnect() } catch { self.error = error.localizedDescription }
+                do { try store.saveSchool(nil) } catch { self.error = error.localizedDescription }
             }
         }
     }

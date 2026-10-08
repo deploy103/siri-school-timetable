@@ -21,9 +21,9 @@ DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer xcodebuild \
   CODE_SIGNING_ALLOWED=NO test
 ```
 
-Xcode에서 `ios/SchoolToday.xcodeproj`를 열어 동일한 scheme을 실행할 수 있다. XCTest는 HTTPS 주소/쿼리 인코딩/학과 구분/설정 저장/API payload/KST 날짜를 검증한다. XCUITest는 네이티브 시작→학교·학과 선택→시간표→급식→설정→재실행과 빈 결과·실패·HTTP 거부를 검증하며 화면 attachment를 남긴다.
+Xcode에서 `ios/SchoolToday.xcodeproj`를 열어 동일한 scheme을 실행할 수 있다. XCTest는 HTTPS 주소/쿼리 인코딩/학과 구분/설정 저장/API payload/KST 날짜를 검증한다. XCUITest는 서버 자동 연결→학교·학과 선택→시간표→급식→설정→재실행과 빈 결과·실패·운영 서버 미설정을 검증하며 화면 attachment를 남긴다.
 
-UI tests의 `--ui-testing`은 DEBUG에서만 별도 UserDefaults와 URLProtocol fixture session을 사용한다. `https://fixture.invalid`를 입력하지만 외부 네트워크에 연결하지 않는다. 앱 기본 실행이나 Release에는 이 fixture를 적용하지 않는다. 테스트 성공은 실제 NEIS/Siri 음성 인식/실물 iPhone 검증을 대신하지 않는다.
+UI tests의 `--ui-testing`은 DEBUG에서만 별도 UserDefaults와 URLProtocol fixture session 및 고정 fixture backend를 사용한다. 외부 네트워크에 연결하거나 사용자에게 주소를 입력받지 않는다. 앱 기본 실행이나 Release에는 이 fixture를 적용하지 않는다. 테스트 성공은 실제 NEIS/Siri 음성 인식/실물 iPhone 검증을 대신하지 않는다.
 
 PR의 Quality workflow는 macOS에서 같은 네이티브 테스트와 서명 없는 iPhone SDK Release 빌드를 실행한다. XcodeGen 버전과 다운로드 SHA-256을 고정하며 테스트 결과 bundle을 보관한다. Apple 계정·서명·배포를 자동으로 처리하지 않는다.
 
@@ -31,7 +31,7 @@ PR의 Quality workflow는 macOS에서 같은 네이티브 테스트와 서명 �
 
 ## 실제 백엔드 연결
 
-Debug 개발 실행에서 첫 화면에 HTTPS 서버 origin을 입력한다. Release는 개발용 서버 입력란을 제공하지 않고 빌드 설정 `SCHOOL_API_BASE_URL=https://실제서버`의 주소만 사용한다. 이전 Debug 빌드에서 저장한 서버 override도 Release에서 무시한다. 이 값은 비밀이 아니다. 임시 터널 주소를 출시 기본값으로 박아 넣지 않는다. 서버가 mock이면 화면과 Siri 응답 모두 예제임을 알린다. NEIS 키는 서버의 `NEIS_API_KEY`에만 둔다.
+앱은 하나의 운영 서버를 사용하는 제품이며 Debug/Release 모두 주소 입력·서버 선택 화면을 제공하지 않는다. 개발자가 빌드 설정 `SCHOOL_API_BASE_URL=https://실제서버`에 HTTPS origin을 한 번 지정하면 앱과 Siri가 같은 주소를 사용한다. 앱 실행 시 자동으로 연결하고 사용자는 학교·학과·학급만 선택한다. 이전 Debug 빌드에서 저장한 서버 override도 사용하지 않는다. 설정 초기화는 학교 선택만 삭제하고 고정 backend를 유지한다. 이 주소는 비밀이 아니다. 임시 터널 주소를 출시 기본값으로 박아 넣지 않는다. 서버가 mock이면 화면과 Siri 응답 모두 예제임을 알린다. NEIS 키는 서버의 `NEIS_API_KEY`에만 둔다.
 
 기기의 학교·학급 선택은 UserDefaults에 저장하며 서버 변경/초기화 시 삭제한다. 시간표/급식은 영구 캐시하지 않는다. 앱 복귀·네트워크 복구 시 재조회하며 KST 날짜는 1분 간격으로 확인한다. API 요청 제한 시간은 20초다. 앱 안에서 학교를 바꾸면 App Intent도 변경된 설정을 읽는다.
 
