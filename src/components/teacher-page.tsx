@@ -3,6 +3,7 @@
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { CheckIcon, RefreshIcon, SearchIcon, SettingsIcon } from "@/components/icons";
 import { TeacherSiriDialog } from "@/components/teacher-siri-dialog";
+import { StorageNotice } from "@/components/storage-notice";
 import { useTeacherSettings } from "@/hooks/use-teacher-settings";
 import { encodeTeacherProfile } from "@/lib/teacher-profile";
 import {
@@ -50,7 +51,7 @@ function toCandidate(assignment: TeacherAssignment): TeacherAssignmentCandidate 
 }
 
 export function TeacherPage() {
-  const { settings, isRestoring, saveSettings, clearSettings } = useTeacherSettings();
+  const { settings, isRestoring, saveSettings, clearSettings, storageUnavailable } = useTeacherSettings();
   const [isEditing, setIsEditing] = useState(false);
 
   if (isRestoring) {
@@ -58,22 +59,28 @@ export function TeacherPage() {
   }
   if (!settings || isEditing) {
     return (
-      <TeacherSetup
-        initialSettings={settings}
-        onSave={(next) => {
-          saveSettings(next);
-          setIsEditing(false);
-        }}
-        onCancel={settings ? () => setIsEditing(false) : undefined}
-      />
+      <>
+        <StorageNotice unavailable={storageUnavailable} />
+        <TeacherSetup
+          initialSettings={settings}
+          onSave={(next) => {
+            saveSettings(next);
+            setIsEditing(false);
+          }}
+          onCancel={settings ? () => setIsEditing(false) : undefined}
+        />
+      </>
     );
   }
   return (
-    <TeacherDashboard
-      settings={settings}
-      onEdit={() => setIsEditing(true)}
-      onReset={clearSettings}
-    />
+    <>
+      <StorageNotice unavailable={storageUnavailable} />
+      <TeacherDashboard
+        settings={settings}
+        onEdit={() => setIsEditing(true)}
+        onReset={clearSettings}
+      />
+    </>
   );
 }
 

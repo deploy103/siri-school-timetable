@@ -84,8 +84,9 @@ curl http://localhost:3000/api/health
 pnpm lint
 pnpm typecheck
 pnpm test
+pnpm audit --prod
 pnpm build
-pnpm exec playwright install chromium
+pnpm exec playwright install --with-deps chromium webkit
 pnpm test:e2e
 ```
 
@@ -185,6 +186,8 @@ docker-compose.yml    로컬/단일 서버 실행 정의
 - `docker compose logs --tail=100 siri-school-timetable`과 `/api/health`로 애플리케이션 상태를 확인한다. 로그에는 키나 upstream 원문을 남기지 않는다.
 
 설계와 운영 세부사항은 [아키텍처](docs/ARCHITECTURE.md), [공식 문서 조사](docs/RESEARCH.md), [보안](docs/SECURITY.md)을 참고한다.
+
+홈 화면 설치 지원과 출시 전 미완료 검증은 [모바일 출시 준비 기록](docs/RELEASE_READINESS.md)을 참고한다. 자동 테스트 통과는 NEIS 실데이터, 실제 iPhone 설치·Siri 음성 실행이나 App Store 출시 완료를 뜻하지 않는다.
 
 한세사이버보안고등학교 교사용 별도 기능의 개발·운영 안내는 [한세 교사용 시간표 설정](docs/HANSEI_TEACHER_SETUP.md)을 참고한다. 이 경로는 기존 학생용 메뉴에 노출하지 않는다.
 

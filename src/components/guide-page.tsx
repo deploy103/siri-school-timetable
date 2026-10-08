@@ -88,6 +88,14 @@ export function GuidePage() {
         <p>전국 학교의 오늘 시간표와 급식을 찾아주고, iPhone Siri로 바로 들을 수 있게 해주는 서비스예요. 로그인 없이 이 기기에만 설정을 저장해요.</p>
       </section>
 
+      <section className="card guide-section" aria-labelledby="install-heading">
+        <h2 id="install-heading">휴대폰 홈 화면에 추가하기</h2>
+        <p><strong>iPhone:</strong> Safari에서 이 사이트를 열고 공유 → 홈 화면에 추가를 선택하세요. 옵션이 보이면 ‘웹 앱으로 열기’를 켜세요.</p>
+        <p><strong>Android:</strong> Chrome 메뉴에서 홈 화면에 추가 또는 앱 설치를 선택하세요. 표시되는 이름은 브라우저 버전에 따라 달라요.</p>
+        <p>설치 후 처음 열면 학교 설정을 다시 확인해 주세요. 브라우저와 홈 화면 앱의 저장소가 다를 수 있어요. 오늘 데이터와 Siri 실행에는 인터넷 연결이 필요합니다.</p>
+        <p>홈 화면 설치는 Siri 단축어를 자동 등록하지 않아요. iPhone에서는 아래 안내대로 단축어를 한 번 만들어 주세요. Android에서는 웹 시간표·급식을 사용할 수 있지만 Siri는 지원하지 않습니다.</p>
+      </section>
+
       <section className="card guide-section quick-guide" aria-labelledby="quick-guide-heading">
         <h2 id="quick-guide-heading">1분 만에 설정하기</h2>
         <ol className="quick-guide-list">

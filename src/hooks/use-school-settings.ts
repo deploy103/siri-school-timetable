@@ -52,6 +52,7 @@ function normalizeSchoolSettings(value: unknown): SchoolSettings | null {
 export function useSchoolSettings() {
   const [settings, setSettings] = useState<SchoolSettings | null>(null);
   const [isRestoring, setIsRestoring] = useState(true);
+  const [storageUnavailable, setStorageUnavailable] = useState(false);
 
   useEffect(() => {
     const restoreTimer = window.setTimeout(() => {
@@ -63,8 +64,16 @@ export function useSchoolSettings() {
           if (normalized) setSettings(normalized);
           else window.localStorage.removeItem(STORAGE_KEY);
         }
-      } catch {
-        window.localStorage.removeItem(STORAGE_KEY);
+      } catch (error) {
+        if (error instanceof SyntaxError) {
+          try {
+            window.localStorage.removeItem(STORAGE_KEY);
+          } catch {
+            setStorageUnavailable(true);
+          }
+        } else {
+          setStorageUnavailable(true);
+        }
       } finally {
         setIsRestoring(false);
       }
@@ -73,11 +82,16 @@ export function useSchoolSettings() {
   }, []);
 
   const saveSettings = useCallback((next: SchoolSettings) => {
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+    try {
+      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+      setStorageUnavailable(false);
+    } catch {
+      setStorageUnavailable(true);
+    }
     setSettings(next);
   }, []);
 
-  return { settings, isRestoring, saveSettings };
+  return { settings, isRestoring, saveSettings, storageUnavailable };
 }
 
 export { STORAGE_KEY };
