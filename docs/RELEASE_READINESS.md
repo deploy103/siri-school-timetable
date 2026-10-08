@@ -4,7 +4,9 @@
 
 ## 제품과 배포 범위
 
-이 저장소는 Next.js 모바일 웹앱이다. App Store/Play Store 네이티브 앱이나 App Intents 구현은 아니다. Web Manifest, 192/512px PNG 아이콘, 180px Apple 터치 아이콘과 standalone 표시 정보를 제공한다. iPhone Safari의 홈 화면 추가 및 Android Chrome의 설치/홈 화면 추가 안내는 `/guide`에 있다. 설치 메뉴 노출과 실제 설치는 브라우저·OS별 기기 확인이 필요하다.
+출시 목표는 **네이티브 iOS 앱**이며 `ios/`에 SwiftUI iPhone 앱, App Intents/App Shortcuts Provider 및 XCTest/XCUITest 소스를 추가했다. Mac에서 빌드·시뮬레이터 테스트를 통과했지만 서명된 iPhone 설치 앱이나 App Store 출시 완료 상태가 아니다. 구체적 절차와 네이티브 미구현 범위는 `ios/README.md`를 따른다.
+
+기존 Next.js 앱은 NEIS 백엔드와 별도 웹 클라이언트로 유지한다. Web Manifest, PNG 아이콘과 `/guide`의 홈 화면 추가 안내는 **웹 버전에만** 해당하며 네이티브 iOS 앱 설치나 App Store 출시 증거로 간주하지 않는다. 아래 자동 검증 기록은 별도 표시가 없는 한 기존 웹/백엔드 검증이다.
 
 Service Worker나 오프라인 데이터 캐시는 제공하지 않는다. 당일 학교 정보를 어제 데이터로 잘못 안내하지 않도록 시간표·급식·Siri 실행에는 네트워크가 필요하다. 로그인·유료 AI·외부 가입 서비스는 앱 동작에 필요하지 않다.
 
@@ -24,6 +26,18 @@ Apple 공식 안내를 2026-10-08에 확인했다:
 
 ## 자동 검증
 
+### 네이티브 iOS
+
+Mac의 Xcode 27.0(27A266a), iOS 27.0 시뮬레이터(24A434), XcodeGen 2.46.0으로 Debug/Release 시뮬레이터 빌드와 서명 없는 실제 iPhone SDK Release 빌드를 통과했다. iPhone 18 Pro 시뮬레이터에서 XCTest 7개와 XCUITest 4개를 통과했고 시작·시간표·급식·설정·빈 결과·오류 화면을 캡처해 확인했다. 학교/학과 선택과 설정 복원도 UI 테스트로 검증했다. `+`가 포함된 학급명은 실제 Swift 생성 URL을 Node URLSearchParams로 파싱해 값이 유지됨을 확인했다. 앱의 UIDeviceFamily는 `[1]`이며 Release에는 개발 서버 입력과 테스트 fixture가 없다.
+
+최초 빌드에서는 App Intents 추출 성공에도 SSU archive 오류가 발생했다. 프로젝트의 개발 언어와 번들 기본/지원 언어를 한국어 `ko`로 명시한 독립 재빌드에서 시뮬레이터·실제 기기 SDK 모두 오류가 사라졌고, 두 한국어 문구의 학습과 `Metadata.appintents/nlu/nlu.lzfse` 생성 및 1개 locale 압축 완료를 확인했다. **이것은 Siri 실제 음성 인식·실행의 증거가 아니다.**
+
+이후 `AppShortcuts.xcstrings` 추가본에서도 시뮬레이터·기기 SDK Release 빌드와 7+4 테스트를 재검증했다. 문구 validation과 한국어 압축이 성공했고 catalog 사용 시 `ko.lproj/nlu.appintents`를 생성한다. 설정의 아래 개인정보 문구와 초기화 버튼은 스크롤 후 전체가 보이는 캡처를 확인했고, 실제 버튼 조작·삭제 확인·재실행 후 삭제 유지도 통과했다.
+
+Quality workflow에 macOS 네이티브 테스트 및 서명 없는 iPhone Release 빌드 job을 추가했다. XcodeGen 2.46.0 다운로드의 SHA-256을 검증하며 signing·배포·계정 생성은 하지 않는다. 로컬 Mac 검증과 GitHub CI 실행 결과는 구분한다.
+
+### 웹/백엔드
+
 `pnpm lint`, `pnpm typecheck`, `pnpm test`, `pnpm audit --prod`, production build와 Playwright E2E를 검증한다. PR 및 main push의 `.github/workflows/quality.yml`은 같은 검증을 수행하며 배포·출판·자동 병합을 하지 않는다. 키 없이 명시적 mock 모드로 실행한다.
 
 브라우저 대상은 iPhone 13 viewport의 WebKit, 390px Chromium, 768px 및 1440px Chromium이다. 설정 저장/복원, 학과 구분, 교사용 흐름, Siri URL, 저장소 차단 상태, 설치 가이드, manifest와 PNG 응답, 학생 시간표·급식의 오프라인 오류와 재연결 자동 복구를 확인한다. 조회 경쟁·한국 자정 경계·숨김/오프라인 상태는 fake clock과 지연 응답 단위 테스트로 확인한다. **WebKit 에뮬레이션은 실제 iPhone·Siri 음성 실행 검증이 아니다.**
@@ -35,9 +49,10 @@ Linux 로컬 검증에서는 관리자 권한 없이 Ubuntu 라이브러리를 �
 - [ ] 서버 전용 `NEIS_API_KEY` 설정 후 `NEIS_MOCK_MODE=false`로 실제 학교 검색·학급·시간표·급식 및 음성 API 통합 검증. 익명 sample의 5행 제한이나 mock 성공을 실데이터 검증으로 대체하지 않는다.
 - [ ] 운영/비공개 시험용 HTTPS 주소와 TLS 인증서 확인. HTTP→HTTPS 리디렉션 및 HSTS 설정, API 키가 번들·응답·로그에 없는지 확인.
 - [ ] proxy가 외부 `X-Forwarded-For`를 **덮어쓰는** 환경에서만 `TRUST_PROXY_HEADERS=true`. Nginx 단일 proxy라면 `proxy_set_header X-Forwarded-For $remote_addr;`로 설정한다. append-only 구성을 신뢰하지 않는다. 기본 공용 rate limit 상태는 다중 사용자 운영에 적합하지 않다. 여러 replica는 공유 제한 계층이 필요하다.
-- [ ] 실제 iPhone Safari에서 설치 → 앱 실행 → 설정 → 종료·재실행 → 설정 유지 확인. 브라우저와 홈 화면 앱 간 설정 공유를 가정하지 않는다.
-- [ ] iPhone 단축어에서 시간표/급식 각각의 HTTPS URL → URL 콘텐츠 가져오기(GET) → 텍스트 말하기 구성 후 직접 실행과 Siri 호출 확인. 학교 변경 후 URL 교체, 빈 데이터와 네트워크 오류 확인.
-- [ ] 실제 Android Chrome에서 설치/홈 화면 추가, 시간표·급식, 재실행 확인. Siri를 Android 기능으로 광고하지 않는다.
+- [ ] 네이티브 앱을 실제 iPhone에 서명해 설치 → 학교·학과·학급 설정 → 시간표/급식 → 종료·재실행 → 설정 유지·초기화 확인. 연결된 iPhone은 있으나 Mac에 유효한 signing identity와 Xcode Apple 계정이 없으며 Developer Mode도 미확인이다. 로그인·서명·기기 설치는 아직 수행하지 않았다.
+- [ ] 네이티브 App Shortcuts의 시간표/급식 직접 실행과 한국어 Siri 호출, 학교 변경 후 설정 반영, 잠금 상태·빈 자료·네트워크 오류 확인. 시뮬레이터 fixture/API 성공이나 SSU 산출물 생성을 실제 Siri 성공으로 대체하지 않는다.
+- [ ] iOS 17 최소 버전과 작은 iPhone, Dynamic Type·VoiceOver·다크 모드 검증; 운영 개인정보 처리방침·App Store 개인정보 답변·브랜딩 확정.
+- [ ] App Store Connect/Developer Program 권한과 signing/provisioning 확인. 무료 Personal Team 개발 설치와 유료 멤버십이 필요한 App Store/TestFlight 배포를 구분하고 결제·공개 배포를 별도 승인 없이 하지 않는다.
 - [ ] 별도 GitHub 계정의 최종 코드 리뷰. 동일 계정이 작성한 PR을 그 계정으로 승인할 수 없으므로 자기 리뷰 댓글을 독립 승인으로 표시하지 않는다.
 
-공유 iCloud 단축어 링크가 필요하면 Apple 기기에서 실제 단축어를 제작·검증한 뒤 발급한다. 임의 공유 링크를 만들거나, Windows VM의 브라우저 테스트를 Apple 기기 실행 증거로 사용하지 않는다. 공개 출시는 이 기록의 미완료 항목을 완료한 뒤 별도로 결정한다.
+기존 웹 클라이언트를 별도로 배포한다면 Safari/Android 홈 화면 설치와 URL 기반 단축어도 실제 기기로 검증한다. 네이티브 App Shortcuts는 수동 URL 단축어 구성이나 공유 iCloud 링크를 설치 조건으로 요구하지 않는다. Windows VM의 브라우저 테스트를 Apple 기기 실행 증거로 사용하지 않는다. 공개 출시는 위 미완료 항목을 완료한 뒤 별도로 결정한다.

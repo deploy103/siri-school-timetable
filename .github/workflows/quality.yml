@@ -36,3 +36,34 @@ jobs:
           name: browser-failures
           path: test-results/
           retention-days: 7
+
+  ios:
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install verified XcodeGen 2.46.0
+        run: |
+          curl -fsSL --retry 3 https://github.com/yonaskolb/XcodeGen/releases/download/2.46.0/xcodegen.zip -o "$RUNNER_TEMP/xcodegen.zip"
+          echo "4d9e34b62172d645eed6457cac13fc222569974098ef4ee9c3368bedf0196806  $RUNNER_TEMP/xcodegen.zip" | shasum -a 256 -c -
+          unzip -q "$RUNNER_TEMP/xcodegen.zip" -d "$RUNNER_TEMP/xcodegen-tool"
+          echo "$RUNNER_TEMP/xcodegen-tool/xcodegen/bin" >> "$GITHUB_PATH"
+      - run: xcodegen generate --spec ios/project.yml --project ios
+      - name: Native unit and UI tests
+        run: |
+          device_id=$(xcrun simctl list devices available -j | python3 -c 'import json, sys; print(next(device["udid"] for devices in json.load(sys.stdin)["devices"].values() for device in devices if device["name"].startswith("iPhone")))')
+          xcodebuild -project ios/SchoolToday.xcodeproj -scheme SchoolToday \
+            -configuration Debug -destination "platform=iOS Simulator,id=$device_id" \
+            -destination-timeout 120 -derivedDataPath "$RUNNER_TEMP/ios-build" \
+            -resultBundlePath "$RUNNER_TEMP/SchoolToday.xcresult" CODE_SIGNING_ALLOWED=NO test
+      - name: Unsigned iPhone Release build
+        run: |
+          xcodebuild -project ios/SchoolToday.xcodeproj -scheme SchoolToday \
+            -configuration Release -destination 'generic/platform=iOS' \
+            -derivedDataPath "$RUNNER_TEMP/ios-device" CODE_SIGNING_ALLOWED=NO build
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: native-test-results
+          path: ${{ runner.temp }}/SchoolToday.xcresult
+          retention-days: 7

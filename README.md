@@ -1,5 +1,7 @@
 # Siri School Timetable
 
+**출시 목표는 네이티브 iOS 앱이다.** SwiftUI 앱과 Siri App Intents 소스는 [`ios/`](ios/README.md)에 있다. 현재 초기 구현 및 Mac 빌드·테스트 단계이며 App Store/TestFlight에 출시된 앱은 아니다. 아래 Next.js 구성은 NEIS 백엔드와 기존 웹 클라이언트 설명이다. 웹 홈 화면 추가를 네이티브 iOS 앱 설치로 대체하지 않는다.
+
 [![Next.js](https://img.shields.io/badge/Next.js-16-000000?logo=nextdotjs)](https://nextjs.org/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-strict-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 [![Node.js](https://img.shields.io/badge/Node.js-24_LTS-5FA04E?logo=nodedotjs&logoColor=white)](https://nodejs.org/)
