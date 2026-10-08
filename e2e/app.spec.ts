@@ -5,6 +5,34 @@ test.beforeEach(async ({ context }, testInfo) => {
   await context.setExtraHTTPHeaders({ "x-forwarded-for": `192.0.2.${testInfo.workerIndex + 1}` });
 });
 
+test("timetable and meals recover on reconnection without reloading the app", async ({ page, context }) => {
+  await page.addInitScript(() => {
+    localStorage.setItem("time-siri.school-settings.v1", JSON.stringify({
+      school: { officeCode: "C10", schoolCode: "C100000001", name: "부산미래중학교", kind: "중학교", region: "부산광역시교육청", address: "부산광역시 부산진구 미래로 1" },
+      grade: 2, className: "1",
+    }));
+  });
+  await page.goto("/");
+  const errorCard = page.getByRole("main").getByRole("alert");
+  await expect(page.getByText("자료구조", { exact: true })).toBeVisible();
+  await context.setOffline(true);
+  await page.getByRole("button", { name: "새로고침", exact: true }).click();
+  await expect(errorCard).toContainText("인터넷 연결을 확인");
+  await expect(page.getByText("자료구조", { exact: true })).toBeHidden();
+  await context.setOffline(false);
+  await expect(page.getByText("자료구조", { exact: true })).toBeVisible();
+  await expect(errorCard).toBeHidden();
+
+  await page.getByRole("button", { name: "급식", exact: true }).click();
+  await expect(page.getByText("제육볶음 (5.6.10)")).toBeVisible();
+  await context.setOffline(true);
+  await page.getByRole("button", { name: "새로고침", exact: true }).click();
+  await expect(errorCard).toContainText("인터넷 연결을 확인");
+  await context.setOffline(false);
+  await expect(page.getByText("제육볶음 (5.6.10)")).toBeVisible();
+  await expect(errorCard).toBeHidden();
+});
+
 test("mobile-first setup, timetable, persistence, and Siri flow", async ({ page }, testInfo) => {
   const consoleErrors: string[] = [];
   page.on("console", (message) => {

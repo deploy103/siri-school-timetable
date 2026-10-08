@@ -49,7 +49,7 @@ describe("MealView", () => {
     expect(screen.queryByText("782.3 Kcal")).not.toBeInTheDocument();
     expect(fetchMock).toHaveBeenCalledWith(
       "/api/meal/today?officeCode=B10&schoolCode=7010911",
-      { cache: "no-store" },
+      { cache: "no-store", signal: expect.any(AbortSignal) },
     );
   });
 
