@@ -1,5 +1,6 @@
 import SwiftUI
 import Network
+import AppIntents
 
 @main
 struct SchoolTodayApp: App {
@@ -233,9 +234,16 @@ struct SettingsView: View {
                 }
             }
             Section("Siri와 단축어") {
+                ShortcutsLink()
+                    .accessibilityLabel("단축어 앱에서 시간표와 급식 열기")
+                    .accessibilityIdentifier("open-school-shortcuts")
+                Text("위 버튼을 누르면 오늘의 학교 단축어 페이지가 열립니다. 시간표·급식을 바로 실행하거나 원하는 항목을 개인 단축어로 추가하세요.")
+                    .font(.footnote)
                 Label("오늘 시간표 듣기", systemImage: "calendar")
+                SiriTipView(intent: TodayTimetableIntent())
                 Label("오늘 급식 듣기", systemImage: "fork.knife")
-                Text("단축어 앱 → 앱 단축어 → 오늘의 학교에서 실행해 보세요. Siri에 ‘오늘의 학교 오늘 시간표 알려줘’ 또는 ‘오늘의 학교 오늘 급식 알려줘’라고 말할 수 있습니다. 실제 기기에서 인식 여부를 확인해야 합니다.")
+                SiriTipView(intent: TodayMealIntent())
+                Text("학교·학급 설정은 단축어에도 자동으로 반영됩니다. Siri에 ‘오늘의 학교 오늘 시간표 알려줘’ 또는 ‘오늘의 학교 오늘 급식 알려줘’라고 말해 보세요.")
                     .font(.footnote)
             }
             Section("데이터와 개인정보") {

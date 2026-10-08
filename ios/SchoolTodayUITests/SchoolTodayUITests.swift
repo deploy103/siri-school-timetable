@@ -44,6 +44,7 @@ final class SchoolTodayUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["계란국 (1)"].waitForExistence(timeout: 10))
         capture("native-meals", app: app)
         app.tabBars.buttons["설정"].tap()
+        XCTAssertTrue(app.buttons["open-school-shortcuts"].isHittable)
         XCTAssertTrue(app.staticTexts["오늘 시간표 듣기"].exists)
         capture("native-settings", app: app)
         app.terminate()
@@ -52,8 +53,8 @@ final class SchoolTodayUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["수학"].waitForExistence(timeout: 10))
         XCTAssertTrue(app.staticTexts["콘텐츠과 · 2학년 3반"].exists)
         app.tabBars.buttons["설정"].tap()
-        app.swipeUp()
         let reset = app.buttons["학교 설정 초기화"]
+        for _ in 0..<3 where !reset.isHittable { app.swipeUp() }
         XCTAssertTrue(reset.isHittable)
         capture("native-settings-scrolled", app: app)
         reset.tap()
