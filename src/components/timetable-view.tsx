@@ -1,9 +1,10 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { GuideIcon, RefreshIcon, SettingsIcon, SpeakerIcon } from "@/components/icons";
 import { SiriDialog } from "@/components/siri-dialog";
-import type { ApiErrorBody, SchoolSettings, Timetable } from "@/types/client";
+import { useTodayResource } from "@/hooks/use-today-resource";
+import type { SchoolSettings, Timetable } from "@/types/client";
 
 interface Props {
   settings: SchoolSettings;
@@ -26,19 +27,7 @@ function formatDate(date: string): string {
   return Number.isNaN(parsed.getTime()) ? date : koreanDate.format(parsed);
 }
 
-async function apiError(response: Response): Promise<Error> {
-  try {
-    const body = (await response.json()) as ApiErrorBody;
-    return new Error(body.error?.message ?? body.message ?? "시간표를 불러오지 못했습니다.");
-  } catch {
-    return new Error("시간표를 불러오지 못했습니다.");
-  }
-}
-
 export function TimetableView({ settings, onChangeSettings, onShowMeal, onShowGuide, openSiriOnMount, onSiriAutoOpened }: Props) {
-  const [timetable, setTimetable] = useState<Timetable | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   const [siriOpen, setSiriOpen] = useState(() => Boolean(openSiriOnMount));
   const [isSpeaking, setIsSpeaking] = useState(false);
 
@@ -59,27 +48,12 @@ export function TimetableView({ settings, onChangeSettings, onShowMeal, onShowGu
     return params.toString();
   }, [settings]);
 
-  const loadTimetable = useCallback(async () => {
-    setIsLoading(true);
-    setError(null);
-    try {
-      const response = await fetch(`/api/timetable/today?${query}`, { cache: "no-store" });
-      if (!response.ok) throw await apiError(response);
-      const data = (await response.json()) as Timetable;
-      setTimetable({ ...data, lessons: [...data.lessons].sort((a, b) => a.period - b.period) });
-    } catch (reason) {
-      setTimetable(null);
-      if (typeof navigator !== "undefined" && !navigator.onLine) setError("인터넷 연결을 확인한 뒤 다시 시도해 주세요.");
-      else setError(reason instanceof Error ? reason.message : "시간표를 불러오지 못했습니다.");
-    } finally {
-      setIsLoading(false);
-    }
-  }, [query]);
-
-  useEffect(() => {
-    const loadTimer = window.setTimeout(() => void loadTimetable(), 0);
-    return () => window.clearTimeout(loadTimer);
-  }, [loadTimetable]);
+  const { data, isLoading, error, reload: loadTimetable } = useTodayResource<Timetable>(
+    `/api/timetable/today?${query}`, "시간표를 불러오지 못했습니다.",
+  );
+  const timetable = useMemo(() => data && {
+    ...data, lessons: [...data.lessons].sort((a, b) => a.period - b.period),
+  }, [data]);
   useEffect(() => () => window.speechSynthesis?.cancel(), []);
 
   function speak() {

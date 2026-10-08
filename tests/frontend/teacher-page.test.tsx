@@ -1,7 +1,7 @@
 import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
-import { TEACHER_AUTO_REFRESH_MS, TeacherPage } from "@/components/teacher-page";
+import { TeacherPage } from "@/components/teacher-page";
 import { TEACHER_STORAGE_KEY } from "@/hooks/use-teacher-settings";
 import { decodeTeacherProfile } from "@/lib/teacher-profile";
 import type { TeacherSettings, TeacherTimetable } from "@/types/teacher";
@@ -170,7 +170,7 @@ describe("Hansei teacher page", () => {
       await act(() => vi.advanceTimersByTimeAsync(1));
       await act(() => vi.advanceTimersByTimeAsync(1));
       expect(fetchMock.mock.calls.filter(([url]) => String(url).startsWith("/api/hansei-t/timetable?"))).toHaveLength(1);
-      await act(() => vi.advanceTimersByTimeAsync(TEACHER_AUTO_REFRESH_MS));
+      await act(() => vi.advanceTimersByTimeAsync(30 * 60_000));
       expect(fetchMock.mock.calls.filter(([url]) => String(url).startsWith("/api/hansei-t/timetable?"))).toHaveLength(2);
     } finally {
       unmount();

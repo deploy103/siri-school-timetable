@@ -1,10 +1,11 @@
 "use client";
 
-import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { CheckIcon, RefreshIcon, SearchIcon, SettingsIcon } from "@/components/icons";
 import { TeacherSiriDialog } from "@/components/teacher-siri-dialog";
 import { StorageNotice } from "@/components/storage-notice";
 import { useTeacherSettings } from "@/hooks/use-teacher-settings";
+import { useTodayResource } from "@/hooks/use-today-resource";
 import { encodeTeacherProfile } from "@/lib/teacher-profile";
 import {
   HANSEI_SCHOOL,
@@ -21,8 +22,6 @@ import type {
   TeacherTimetable,
 } from "@/types/teacher";
 import type { ApiErrorBody } from "@/types/client";
-
-export const TEACHER_AUTO_REFRESH_MS = 30 * 60_000;
 
 async function readApiError(response: Response, fallback: string): Promise<string> {
   try {
@@ -301,49 +300,15 @@ interface DashboardProps {
 }
 
 function TeacherDashboard({ settings, onEdit, onReset }: DashboardProps) {
-  const [timetable, setTimetable] = useState<TeacherTimetable | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   const [siriOpen, setSiriOpen] = useState(false);
-  const lastRefreshAttempt = useRef(0);
   const profile = useMemo(() => encodeTeacherProfile(settings), [settings]);
-
-  const loadTimetable = useCallback(async () => {
-    lastRefreshAttempt.current = Date.now();
-    setIsLoading(true);
-    setError(null);
-    try {
-      const params = new URLSearchParams({ p: profile });
-      const response = await fetch(`/api/hansei-t/timetable?${params.toString()}`, { cache: "no-store" });
-      if (!response.ok) throw new Error(await readApiError(response, "교사용 시간표를 불러오지 못했습니다."));
-      const body = (await response.json()) as TeacherTimetable;
-      setTimetable({ ...body, lessons: [...body.lessons].sort((left, right) => left.period - right.period) });
-    } catch (reason) {
-      setTimetable(null);
-      setError(reason instanceof Error ? reason.message : "교사용 시간표를 불러오지 못했습니다.");
-    } finally {
-      setIsLoading(false);
-    }
-  }, [profile]);
-
-  useEffect(() => {
-    const timer = window.setTimeout(() => void loadTimetable(), 0);
-    const interval = window.setInterval(() => void loadTimetable(), TEACHER_AUTO_REFRESH_MS);
-    function refreshAfterReturning() {
-      if (
-        document.visibilityState === "visible" &&
-        Date.now() - lastRefreshAttempt.current >= TEACHER_AUTO_REFRESH_MS
-      ) {
-        void loadTimetable();
-      }
-    }
-    document.addEventListener("visibilitychange", refreshAfterReturning);
-    return () => {
-      window.clearTimeout(timer);
-      window.clearInterval(interval);
-      document.removeEventListener("visibilitychange", refreshAfterReturning);
-    };
-  }, [loadTimetable]);
+  const params = new URLSearchParams({ p: profile });
+  const { data, isLoading, error, reload: loadTimetable } = useTodayResource<TeacherTimetable>(
+    `/api/hansei-t/timetable?${params.toString()}`, "교사용 시간표를 불러오지 못했습니다.",
+  );
+  const timetable = useMemo(() => data && {
+    ...data, lessons: [...data.lessons].sort((left, right) => left.period - right.period),
+  }, [data]);
 
   return (
     <main className="page-shell timetable-page teacher-page">
