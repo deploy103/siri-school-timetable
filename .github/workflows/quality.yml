@@ -61,6 +61,18 @@ jobs:
           xcodebuild -project ios/SchoolToday.xcodeproj -scheme SchoolToday \
             -configuration Release -destination 'generic/platform=iOS' \
             -derivedDataPath "$RUNNER_TEMP/ios-device" CODE_SIGNING_ALLOWED=NO build
+      - name: Export native screenshots
+        if: always()
+        run: |
+          if [ -d "$RUNNER_TEMP/SchoolToday.xcresult" ]; then
+            xcrun xcresulttool export attachments --path "$RUNNER_TEMP/SchoolToday.xcresult" --output-path "$RUNNER_TEMP/native-screenshots"
+          fi
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: native-screenshots
+          path: ${{ runner.temp }}/native-screenshots
+          retention-days: 7
       - uses: actions/upload-artifact@v4
         if: always()
         with:

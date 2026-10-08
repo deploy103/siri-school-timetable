@@ -10,12 +10,9 @@ final class SchoolTodayUITests: XCTestCase {
     }
 
     private func selectSchool(_ app: XCUIApplication) {
-        let address = app.textFields["server-address"]
-        XCTAssertTrue(address.waitForExistence(timeout: 10))
-        address.tap(); address.typeText("https://fixture.invalid")
-        app.buttons["connect-server"].tap()
         let search = app.textFields["school-search"]
         XCTAssertTrue(search.waitForExistence(timeout: 10))
+        XCTAssertFalse(app.textFields["server-address"].exists)
         search.tap(); search.typeText("테스트")
         app.buttons["학교 검색"].tap()
         let school = app.buttons.containing(NSPredicate(format: "label CONTAINS %@", "테스트고등학교")).firstMatch
@@ -35,7 +32,7 @@ final class SchoolTodayUITests: XCTestCase {
 
     func testNativeSetupTimetableMealsSettingsAndRelaunch() {
         let app = launch()
-        XCTAssertTrue(app.textFields["server-address"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.textFields["school-search"].waitForExistence(timeout: 10))
         capture("native-start", app: app)
         selectSchool(app)
         XCTAssertTrue(app.staticTexts["수학"].waitForExistence(timeout: 10))
@@ -56,17 +53,17 @@ final class SchoolTodayUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["콘텐츠과 · 2학년 3반"].exists)
         app.tabBars.buttons["설정"].tap()
         app.swipeUp()
-        let reset = app.buttons["서버 및 학교 설정 초기화"]
+        let reset = app.buttons["학교 설정 초기화"]
         XCTAssertTrue(reset.isHittable)
         capture("native-settings-scrolled", app: app)
         reset.tap()
         let delete = app.buttons["설정 삭제"]
         XCTAssertTrue(delete.waitForExistence(timeout: 5))
         delete.tap()
-        XCTAssertTrue(app.textFields["server-address"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.textFields["school-search"].waitForExistence(timeout: 10))
         app.terminate()
         app.launch()
-        XCTAssertTrue(app.textFields["server-address"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.textFields["school-search"].waitForExistence(timeout: 10))
         XCTAssertFalse(app.staticTexts["수학"].exists)
     }
 
@@ -87,14 +84,20 @@ final class SchoolTodayUITests: XCTestCase {
         capture("native-error", app: app)
     }
 
-    func testInsecureServerIsRejected() {
-        let app = launch()
-        let address = app.textFields["server-address"]
-        XCTAssertTrue(address.waitForExistence(timeout: 10))
-        address.tap(); address.typeText("http://fixture.invalid")
-        app.buttons["connect-server"].tap()
-        XCTAssertTrue(app.staticTexts["connection-error"].waitForExistence(timeout: 10))
+    func testMissingBackendDoesNotAskUserForAnAddress() {
+        let app = launch(extra: ["--missing-server"])
+        XCTAssertTrue(app.staticTexts["서비스 연결이 아직 준비되지 않았습니다."].waitForExistence(timeout: 10))
+        XCTAssertFalse(app.textFields["server-address"].exists)
         XCTAssertFalse(app.textFields["school-search"].exists)
-        capture("native-invalid-server", app: app)
+        capture("native-service-unconfigured", app: app)
+    }
+
+    func testBackendConnectionFailureOffersRetryWithoutAddressInput() {
+        let app = launch(extra: ["--fail-connection"])
+        XCTAssertTrue(app.staticTexts["connection-error"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.buttons["다시 시도"].isHittable)
+        XCTAssertFalse(app.textFields["server-address"].exists)
+        XCTAssertFalse(app.textFields["school-search"].exists)
+        capture("native-connection-error", app: app)
     }
 }

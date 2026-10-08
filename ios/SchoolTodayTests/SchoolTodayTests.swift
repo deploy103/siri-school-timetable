@@ -79,23 +79,26 @@ final class SchoolTodayTests: XCTestCase {
     }
 
     @MainActor
-    func testReconnectPreservesSchoolButChangingServerAndResetClearIt() async throws {
+    func testReconnectPreservesSchoolButChangingBackendAndResetClearIt() async throws {
         let suite = "SchoolTodayTests.\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
         defer { defaults.removePersistentDomain(forName: suite) }
-        let store = SchoolStore(defaults: defaults, session: PreviewTransport.session)
-        try await store.connect(server: "https://fixture.invalid")
+        let store = SchoolStore(defaults: defaults, session: PreviewTransport.session, server: "https://fixture.invalid")
+        try await store.connect()
         try store.saveSchool(settings)
-        try await store.connect(server: "https://fixture.invalid")
+        try await store.connect()
         XCTAssertEqual(store.school, settings)
-        try await store.connect(server: "https://fixture.invalid:8443")
-        XCTAssertNil(store.school)
+        let updated = SchoolStore(defaults: defaults, session: PreviewTransport.session, server: "https://fixture.invalid:8443")
+        try await updated.connect()
+        XCTAssertNil(updated.school)
         XCTAssertNil(SchoolPreferences.readSchool(defaults: defaults))
-        try store.saveSchool(settings)
-        try store.disconnect()
-        XCTAssertNil(store.api)
-        XCTAssertNil(store.school)
-        XCTAssertNil(defaults.string(forKey: SchoolPreferences.serverKey))
+        try updated.saveSchool(settings)
+        try updated.saveSchool(nil)
+        XCTAssertNotNil(updated.api)
+        XCTAssertNil(updated.school)
+        XCTAssertNil(SchoolPreferences.readSchool(defaults: defaults))
+        XCTAssertEqual(updated.server, "https://fixture.invalid:8443")
+        XCTAssertEqual(SchoolStore(defaults: defaults).server, SchoolPreferences.server())
     }
 
     @MainActor
