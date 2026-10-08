@@ -16,3 +16,9 @@
 
 # TypeScript
 *.tsbuildinfo
+
+# Generated native projects and build/test output
+/ios/*.xcodeproj
+/ios/build
+/ios/build-device
+/ios/*.xcresult
