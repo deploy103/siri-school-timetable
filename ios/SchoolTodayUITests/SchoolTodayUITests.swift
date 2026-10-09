@@ -21,6 +21,25 @@ final class SchoolTodayUITests: XCTestCase {
         XCTAssertTrue(selected.waitForExistence(timeout: 10))
         XCTAssertTrue(app.buttons["클라우드보안과 · 2학년 3반"].exists)
         selected.tap()
+        XCTAssertTrue(app.navigationBars["Siri 시작하기"].waitForExistence(timeout: 10))
+        XCTAssertFalse(app.tabBars.buttons["시간표"].exists)
+        capture("native-siri-onboarding", app: app)
+        let siri = app.switches["review-siri-guide"]
+        for _ in 0..<4 where !siri.isHittable { app.swipeUp() }
+        app.swipeUp()
+        let shortcuts = app.switches["review-shortcuts-guide"]
+        let finish = app.buttons["finish-shortcut-guide"]
+        XCTAssertFalse(finish.isEnabled)
+        siri.tap()
+        XCTAssertFalse(finish.isEnabled)
+        shortcuts.tap()
+        XCTAssertTrue(finish.isEnabled)
+        capture("native-siri-onboarding-confirmation", app: app)
+        finish.tap()
+        XCTAssertTrue(app.tabBars.buttons["Siri"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.tabBars.buttons["Siri"].isSelected)
+        capture("native-siri-home", app: app)
+        app.tabBars.buttons["시간표"].tap()
     }
 
     private func capture(_ name: String, app: XCUIApplication) {
@@ -50,6 +69,10 @@ final class SchoolTodayUITests: XCTestCase {
         app.terminate()
         app.launchArguments = ["--ui-testing"]
         app.launch()
+        XCTAssertTrue(app.tabBars.buttons["Siri"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.tabBars.buttons["Siri"].isSelected)
+        XCTAssertFalse(app.buttons["finish-shortcut-guide"].exists)
+        app.tabBars.buttons["시간표"].tap()
         XCTAssertTrue(app.staticTexts["수학"].waitForExistence(timeout: 10))
         XCTAssertTrue(app.staticTexts["콘텐츠과 · 2학년 3반"].exists)
         app.tabBars.buttons["설정"].tap()
@@ -66,6 +89,7 @@ final class SchoolTodayUITests: XCTestCase {
         app.launch()
         XCTAssertTrue(app.textFields["school-search"].waitForExistence(timeout: 10))
         XCTAssertFalse(app.staticTexts["수학"].exists)
+        selectSchool(app)
     }
 
     func testEmptyTimetableIsNotAnError() {

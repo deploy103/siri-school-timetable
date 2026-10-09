@@ -29,6 +29,7 @@ struct SchoolTodayApp: App {
 @MainActor
 final class SchoolStore: ObservableObject {
     @Published private(set) var school: SchoolSettings?
+    @Published private(set) var shortcutGuideReviewed: Bool
     @Published private(set) var api: SchoolAPI?
     @Published private(set) var mode = ""
     @Published private(set) var online = true
@@ -42,6 +43,7 @@ final class SchoolStore: ObservableObject {
         self.session = session
         self.server = server
         school = SchoolPreferences.readSchool(defaults: defaults)
+        shortcutGuideReviewed = defaults.bool(forKey: "schooltoday.shortcut-guide.v1")
         monitor.pathUpdateHandler = { [weak self] path in
             Task { @MainActor in self?.online = path.status == .satisfied }
         }
@@ -63,6 +65,14 @@ final class SchoolStore: ObservableObject {
     func saveSchool(_ settings: SchoolSettings?) throws {
         try SchoolPreferences.writeSchool(settings, defaults: defaults)
         school = settings
+        if settings == nil {
+            shortcutGuideReviewed = false
+            defaults.removeObject(forKey: "schooltoday.shortcut-guide.v1")
+        }
+    }
+    func finishShortcutGuide() {
+        defaults.set(true, forKey: "schooltoday.shortcut-guide.v1")
+        shortcutGuideReviewed = true
     }
 }
 
@@ -72,13 +82,19 @@ struct RootView: View {
         Group {
             if let api = store.api {
                 if let school = store.school {
-                    TabView {
-                        NavigationStack { TodayView(kind: .timetable, settings: school, api: api) }
-                            .tabItem { Label("시간표", systemImage: "calendar") }
-                        NavigationStack { TodayView(kind: .meals, settings: school, api: api) }
-                            .tabItem { Label("급식", systemImage: "fork.knife") }
-                        NavigationStack { SettingsView() }
-                            .tabItem { Label("설정", systemImage: "gearshape") }
+                    if !store.shortcutGuideReviewed {
+                        NavigationStack { ShortcutGuideView(onboarding: true) }
+                    } else {
+                        TabView {
+                            NavigationStack { ShortcutGuideView(onboarding: false) }
+                                .tabItem { Label("Siri", systemImage: "waveform") }
+                            NavigationStack { TodayView(kind: .timetable, settings: school, api: api) }
+                                .tabItem { Label("시간표", systemImage: "calendar") }
+                            NavigationStack { TodayView(kind: .meals, settings: school, api: api) }
+                                .tabItem { Label("급식", systemImage: "fork.knife") }
+                            NavigationStack { SettingsView() }
+                                .tabItem { Label("설정", systemImage: "gearshape") }
+                        }
                     }
                 } else {
                     NavigationStack { SchoolSearchView(api: api) }
@@ -88,6 +104,59 @@ struct RootView: View {
             }
         }
         .tint(.indigo)
+    }
+}
+
+struct ShortcutGuideView: View {
+    @EnvironmentObject private var store: SchoolStore
+    let onboarding: Bool
+    @State private var siriGuideReviewed = false
+    @State private var shortcutsGuideReviewed = false
+
+    var body: some View {
+        Form {
+            Section {
+                Text(onboarding ? "이제 Siri로 시간표와 급식을 물어보세요" : "Siri로 오늘의 학교 사용하기")
+                    .font(.title2.bold())
+                Text(store.school?.school.name ?? "")
+                Text(store.school?.schoolClass.label ?? "")
+                DemoNotice()
+            }
+            Section("1. iPhone에서 Siri 켜기") {
+                Text("iPhone의 설정 앱을 열고 ‘Siri’ 또는 ‘Apple Intelligence 및 Siri’를 찾으세요. 음성으로 Siri를 부르는 옵션을 켜고, 화면에 나오는 음성 설정을 마쳐 주세요. 메뉴 이름은 iOS 버전에 따라 다를 수 있습니다.")
+                Text("음성 호출을 쓰지 않는다면 측면 버튼(홈 버튼이 있는 기기는 홈 버튼)으로 Siri를 실행하도록 설정할 수 있습니다. 설정을 마치면 이 앱으로 돌아오세요.")
+                    .font(.footnote)
+            }
+            Section("2. 학교 단축어 열기") {
+                ShortcutsLink()
+                    .accessibilityLabel("단축어 앱에서 시간표와 급식 열기")
+                    .accessibilityIdentifier("open-school-shortcuts")
+                Text("앱의 단축어 페이지에서 ‘오늘 시간표’ 또는 ‘오늘 급식’을 실행해 보세요. 개인 단축어로도 추가할 수 있습니다. 학교·학급은 위에서 선택한 설정을 사용합니다.")
+                    .font(.footnote)
+            }
+            Section("3. Siri에게 말하기") {
+                Text("오늘의 학교 오늘 시간표 알려줘")
+                SiriTipView(intent: TodayTimetableIntent())
+                Text("오늘의 학교 오늘 급식 알려줘")
+                SiriTipView(intent: TodayMealIntent())
+                Text("Siri를 부르거나 측면·홈 버튼을 길게 누른 뒤 위 문구를 말해 보세요. 인터넷 연결이 필요합니다. 인식되지 않으면 단축어 앱에서 먼저 실행해 보고 Siri 설정을 확인하세요.")
+                    .font(.footnote)
+            }
+            if onboarding {
+                Section {
+                    Toggle("Siri 설정 안내를 확인했어요", isOn: $siriGuideReviewed)
+                        .accessibilityIdentifier("review-siri-guide")
+                    Toggle("단축어 사용 방법을 확인했어요", isOn: $shortcutsGuideReviewed)
+                        .accessibilityIdentifier("review-shortcuts-guide")
+                    Button("안내 확인하고 시작하기") { store.finishShortcutGuide() }
+                        .disabled(!siriGuideReviewed || !shortcutsGuideReviewed)
+                        .accessibilityIdentifier("finish-shortcut-guide")
+                } footer: {
+                    Text("앱은 Siri가 켜졌는지나 개인 단축어 추가 여부를 확인할 수 없습니다. 안내 확인은 실제 실행 성공을 의미하지 않습니다. 이 안내는 첫 번째 Siri 탭에서 언제든 다시 볼 수 있습니다.")
+                }
+            }
+        }
+        .navigationTitle(onboarding ? "Siri 시작하기" : "Siri와 단축어")
     }
 }
 
@@ -234,6 +303,7 @@ struct SettingsView: View {
                 }
             }
             Section("Siri와 단축어") {
+                NavigationLink("Siri 설정 안내 다시 보기") { ShortcutGuideView(onboarding: false) }
                 ShortcutsLink()
                     .accessibilityLabel("단축어 앱에서 시간표와 급식 열기")
                     .accessibilityIdentifier("open-school-shortcuts")

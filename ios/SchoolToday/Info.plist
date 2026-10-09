@@ -2,7 +2,7 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0"><dict>
   <key>CFBundleDisplayName</key><string>오늘의 학교</string>
-  <key>CFBundleName</key><string>$(PRODUCT_NAME)</string>
+  <key>CFBundleName</key><string>오늘의 학교</string>
   <key>CFBundleDevelopmentRegion</key><string>$(DEVELOPMENT_LANGUAGE)</string>
   <key>CFBundleLocalizations</key><array><string>ko</string></array>
   <key>CFBundleIdentifier</key><string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
