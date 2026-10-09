@@ -311,8 +311,9 @@ struct SettingsView: View {
                 }.modifier(SchoolCard())
                 VStack(alignment: .leading, spacing: 16) {
                     NavigationLink("Siri 설정 안내 다시 보기") { SiriGuideView(onboarding: false) }
-                    ShortcutsLink().accessibilityIdentifier("open-school-shortcuts")
-                        .accessibilityLabel("오늘의 학교 단축어 페이지 열기")
+                    NavigationLink("단축어 실행 점검") { ShortcutCheckView() }
+                        .accessibilityIdentifier("shortcut-check")
+                    SchoolShortcutsEntry()
                     Text("앱 호출 문구와 개인 단축어 이름은 달라요. 안내에서 Siri 설정, 이름 변경과 웹 검색이 나올 때의 확인 방법을 볼 수 있어요.")
                         .font(.footnote).foregroundStyle(.secondary)
                 }.modifier(SchoolCard())

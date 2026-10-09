@@ -46,7 +46,11 @@ final class SchoolTodayUITests: XCTestCase {
             XCTAssertTrue(app.staticTexts["siri-guide-title"].label.contains(titles[step]))
             XCTAssertTrue(app.staticTexts["siri-guide-title"].isHittable)
             capture("native-guide-\(names[step])", app: app)
-            if step == 2 { XCTAssertTrue(app.buttons["open-school-shortcuts"].isHittable) }
+            if step == 2 {
+                let entry = app.buttons["open-school-shortcuts"]
+                for _ in 0..<3 where !entry.isHittable { app.swipeUp() }
+                XCTAssertTrue(entry.isHittable)
+            }
             app.swipeUp()
             capture("native-guide-\(names[step])-scrolled", app: app)
             XCTAssertTrue(app.buttons["guide-next"].isHittable)
@@ -156,6 +160,40 @@ final class SchoolTodayUITests: XCTestCase {
         capture("native-empty", app: app)
     }
 
+    func testShortcutCheckFailureRetryAndBothResults() {
+        let app = launch(extra: ["--fail-first-voice"])
+        selectSchool(app)
+        app.tabBars.buttons["홈"].tap()
+        let check = app.buttons["shortcut-check"]
+        for _ in 0..<3 where !check.isHittable { app.swipeUp() }
+        XCTAssertTrue(check.isHittable)
+        check.tap()
+        XCTAssertTrue(app.buttons["check-timetable"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.buttons["닫기"].isHittable)
+        capture("native-shortcut-check", app: app)
+        app.buttons["check-timetable"].tap()
+        let error = app.staticTexts["shortcut-check-error"]
+        XCTAssertTrue(error.waitForExistence(timeout: 10))
+        XCTAssertTrue(error.label.contains("잠시 뒤 다시 실행"))
+        XCTAssertFalse(app.staticTexts["shortcut-check-result"].exists)
+        capture("native-shortcut-check-error", app: app)
+        app.buttons["check-timetable"].tap()
+        let result = app.staticTexts["shortcut-check-result"]
+        XCTAssertTrue(result.waitForExistence(timeout: 10))
+        XCTAssertEqual(result.label, "실제 학교 자료가 아닌 예제 데이터입니다. 오늘 시간표는 1교시 수학, 3교시 생명과학입니다.")
+        XCTAssertFalse(error.exists)
+        capture("native-shortcut-check-timetable", app: app)
+        app.buttons["check-meal"].tap()
+        let meal = NSPredicate(format: "label == %@", "실제 학교 자료가 아닌 예제 데이터입니다. 오늘 급식은 쌀밥, 계란국입니다.")
+        expectation(for: meal, evaluatedWith: result)
+        waitForExpectations(timeout: 10)
+        capture("native-shortcut-check-meal", app: app)
+        app.swipeUp()
+        capture("native-shortcut-check-instructions", app: app)
+        app.buttons["닫기"].tap()
+        XCTAssertTrue(app.tabBars.buttons["홈"].isSelected)
+    }
+
     func testFailedLookupOffersRetryWithoutOldLessons() {
         let app = launch(extra: ["--fail-timetable"])
         selectSchool(app)
@@ -178,6 +216,7 @@ final class SchoolTodayUITests: XCTestCase {
         XCTAssertFalse(app.buttons["다시 시도"].exists)
         app.buttons["start-onboarding"].tap()
         XCTAssertTrue(app.staticTexts["connection-error"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.staticTexts["connection-error"].label.contains("인터넷 연결을 확인"))
         XCTAssertTrue(app.buttons["다시 시도"].isHittable)
         XCTAssertFalse(app.textFields["server-address"].exists)
         XCTAssertFalse(app.textFields["school-search"].exists)
