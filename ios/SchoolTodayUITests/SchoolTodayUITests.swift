@@ -20,6 +20,7 @@ final class SchoolTodayUITests: XCTestCase {
         XCTAssertFalse(app.textFields["server-address"].exists)
         XCTAssertFalse(app.buttons["school-next"].isEnabled)
         search.tap(); search.typeText("테스트")
+        capture("native-school-keyboard", app: app)
         app.buttons["학교 검색"].tap()
         let school = app.buttons["테스트고등학교"]
         XCTAssertTrue(school.waitForExistence(timeout: 10)); school.tap()

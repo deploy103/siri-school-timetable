@@ -207,12 +207,14 @@ struct SchoolSearchView: View {
         .background(SchoolDesign.canvas)
         .navigationTitle("내 학교").navigationBarTitleDisplayMode(.inline)
         .safeAreaInset(edge: .bottom) {
-            NavigationLink {
-                if let selectedSchool { ClassSelectionView(api: api, school: selectedSchool) }
-            } label: { Label("다음", systemImage: "arrow.right") }
-                .buttonStyle(SchoolPrimaryButtonStyle()).disabled(selectedSchool == nil)
-                .accessibilityIdentifier("school-next")
-                .padding(24).background(SchoolDesign.canvas)
+            if !searchFocused {
+                NavigationLink {
+                    if let selectedSchool { ClassSelectionView(api: api, school: selectedSchool) }
+                } label: { Label("다음", systemImage: "arrow.right") }
+                    .buttonStyle(SchoolPrimaryButtonStyle()).disabled(selectedSchool == nil)
+                    .accessibilityIdentifier("school-next")
+                    .padding(24).background(SchoolDesign.canvas)
+            }
         }
         .onChange(of: name) { _, _ in submitted = ""; schools = []; selectedSchool = nil; loading = false; error = nil; searchAttempt += 1 }
         .task(id: searchAttempt) {
