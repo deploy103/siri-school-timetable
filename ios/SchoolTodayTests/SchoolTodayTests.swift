@@ -61,6 +61,39 @@ final class SchoolTodayTests: XCTestCase {
         XCTAssertTrue(speech.contains("1교시 수학"))
     }
 
+    func testAppIntentsReturnReusableSetupGuidanceWhenSchoolIsMissing() async throws {
+        let defaults = UserDefaults.standard
+        let original = defaults.data(forKey: SchoolPreferences.schoolKey)
+        defer {
+            if let original { defaults.set(original, forKey: SchoolPreferences.schoolKey) }
+            else { defaults.removeObject(forKey: SchoolPreferences.schoolKey) }
+        }
+        defaults.removeObject(forKey: SchoolPreferences.schoolKey)
+        let timetable = try await TodayTimetableIntent().perform()
+        let meal = try await TodayMealIntent().perform()
+        XCTAssertEqual(timetable.value, "오늘의 학교 앱에서 학교와 학급을 먼저 설정해 주세요.")
+        XCTAssertEqual(meal.value, "오늘의 학교 앱에서 학교와 학급을 먼저 설정해 주세요.")
+    }
+
+    func testNetworkFailuresAreActionableAndCancellationIsPreserved() async throws {
+        let api = try SchoolAPI(server: "https://controlled.invalid", session: ControlledTransport.session)
+        defer { ControlledTransport.onStart = nil }
+        for code in [URLError.Code.notConnectedToInternet, .timedOut, .cancelled] {
+            ControlledTransport.onStart = { $0.fail(code) }
+            do {
+                _ = try await api.health()
+                XCTFail("Expected a failed request")
+            } catch {
+                if code == .cancelled { XCTAssertEqual((error as? URLError)?.code, .cancelled) }
+                else if code == .timedOut {
+                    XCTAssertEqual(error.localizedDescription, "학교 서비스의 응답이 늦어지고 있어요. 잠시 뒤 다시 실행해 주세요.")
+                } else {
+                    XCTAssertEqual(error.localizedDescription, "학교 서비스에 연결하지 못했어요. 인터넷 연결을 확인한 뒤 다시 실행해 주세요.")
+                }
+            }
+        }
+    }
+
     @MainActor
     func testKoreanMidnightAndClearingYesterday() async throws {
         let before = ISO8601DateFormatter().date(from: "2026-10-08T14:59:59Z")!
@@ -159,6 +192,9 @@ private final class ControlledTransport: URLProtocol {
     override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
     override func startLoading() { Self.onStart?(self) }
     override func stopLoading() {}
+    func fail(_ code: URLError.Code) {
+        client?.urlProtocol(self, didFailWithError: URLError(code))
+    }
     func finish(subject: String, status: Int = 200) {
         let body = status == 200
             ? "{\"date\":\"2026-10-08\",\"lessons\":[{\"period\":1,\"subject\":\"\(subject)\"}]}"

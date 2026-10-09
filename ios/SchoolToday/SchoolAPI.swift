@@ -27,7 +27,16 @@ struct SchoolAPI: Sendable {
     private func request(path: String, query: [URLQueryItem] = [], text: Bool = false) async throws -> Data {
         var request = URLRequest(url: url(path: path, query: query), cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 20)
         request.setValue(text ? "text/plain" : "application/json", forHTTPHeaderField: "Accept")
-        let (data, response) = try await session.data(for: request)
+        let data: Data
+        let response: URLResponse
+        do { (data, response) = try await session.data(for: request) }
+        catch let error as URLError {
+            if error.code == .cancelled { throw error }
+            if error.code == .timedOut {
+                throw SchoolError.message("학교 서비스의 응답이 늦어지고 있어요. 잠시 뒤 다시 실행해 주세요.")
+            }
+            throw SchoolError.message("학교 서비스에 연결하지 못했어요. 인터넷 연결을 확인한 뒤 다시 실행해 주세요.")
+        }
         try Task.checkCancellation()
         guard let response = response as? HTTPURLResponse else {
             throw SchoolError.message("서버 응답을 확인할 수 없습니다.")

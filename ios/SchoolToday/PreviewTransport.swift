@@ -3,6 +3,7 @@ import Foundation
 
 /// Deterministic native UI-test data. This code is excluded from Release builds.
 final class PreviewTransport: URLProtocol {
+    private static var failedVoice = false
     static var session: URLSession {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [PreviewTransport.self]
@@ -18,6 +19,11 @@ final class PreviewTransport: URLProtocol {
         let date = day.string(from: Date())
         let path = request.url!.path
         let arguments = ProcessInfo.processInfo.arguments
+        if path.hasPrefix("/api/voice/"), arguments.contains("--fail-first-voice"), !Self.failedVoice {
+            Self.failedVoice = true
+            client?.urlProtocol(self, didFailWithError: URLError(.timedOut))
+            return
+        }
         let body: String
         var status = 200
         switch path {

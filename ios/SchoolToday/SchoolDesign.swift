@@ -91,6 +91,7 @@ struct SiriGuideView: View {
     @Environment(\.dismiss) private var dismiss
     let onboarding: Bool
     @State private var page = 0
+    @State private var check = false
     private let titles = ["Siri를 켜볼까요?", "이제 Siri를\n불러보세요", "학교 단축어를\n열어볼까요?", "이 문구로\n물어보세요", "내 단축어 이름으로\n부를 수도 있어요"]
 
     var body: some View {
@@ -127,10 +128,11 @@ struct SiriGuideView: View {
                         GuideInstruction(number: 2, title: "버튼으로 부르기", detail: "Face ID가 있는 iPhone은 측면 버튼을 길게 누르세요. 홈 버튼이 있는 iPhone은 홈 버튼을 길게 누르세요. 짧게 누르는 것이 아니라 길게 누르는 거예요.")
                         GuideInstruction(number: 3, title: "응답이 없다면", detail: "설정의 Siri 메뉴에서 음성 호출 또는 버튼으로 Siri 사용이 켜져 있는지 확인하세요. 소리가 안 들리면 무음 모드와 Siri 응답 설정도 확인하세요. 이제 이 앱으로 돌아오세요.")
                     case 2:
-                        Text("앱이 제공하는 ‘오늘 시간표’와 ‘오늘 급식’을 먼저 직접 실행해 보세요.").foregroundStyle(.secondary)
-                        ShortcutsLink().accessibilityIdentifier("open-school-shortcuts")
-                            .accessibilityLabel("오늘의 학교 단축어 페이지 열기")
-                        GuideInstruction(number: 1, title: "단축어 페이지 열기", detail: "위 버튼으로 단축어 앱의 오늘의 학교 페이지를 열어요. ‘오늘 시간표’ 또는 ‘오늘 급식’을 눌러 실행해 보세요.")
+                        Text("연동은 버튼 한 번으로 완료되는 것이 아니에요. 먼저 결과를 확인하고, 단축어 앱에서 실행한 뒤 Siri로 불러볼게요.").foregroundStyle(.secondary)
+                        Button("먼저 앱에서 실행 점검하기") { check = true }
+                            .buttonStyle(SchoolPrimaryButtonStyle()).accessibilityIdentifier("shortcut-check")
+                        SchoolShortcutsEntry()
+                        GuideInstruction(number: 1, title: "단축어 페이지 열기", detail: "단축어 앱이 설치되면 ‘오늘의 학교 단축어’ 버튼으로 앱의 페이지를 열어요. 버튼이 열리지 않으면 단축어 앱을 직접 열고 ‘앱 단축어’에서 ‘오늘의 학교’를 찾으세요. ‘오늘 시간표’ 또는 ‘오늘 급식’을 눌러 실행해 보세요.")
                         GuideInstruction(number: 2, title: "내 단축어로 추가하기", detail: "원하는 앱 단축어의 메뉴를 열고 ‘새로운 단축어에서 사용’을 누르세요. 편집 화면에서 이름을 정하고 완료하면 내 단축어에 저장돼요. 메뉴 위치는 iOS 버전에 따라 달라질 수 있어요.")
                         Link("Apple의 앱 단축어 추가 안내", destination: URL(string: "https://support.apple.com/ko-kr/guide/shortcuts/apd43295406d/ios")!)
                         Text("학교·학급은 이 앱에 저장한 설정을 사용해요. 단축어를 추가했는지는 앱이 확인할 수 없어요.").font(.footnote).foregroundStyle(.secondary)
@@ -192,6 +194,7 @@ struct SiriGuideView: View {
             }.padding(24).background(SchoolDesign.canvas)
         }
         .toolbar(.hidden, for: .navigationBar)
+        .sheet(isPresented: $check) { NavigationStack { ShortcutCheckView() } }
     }
 }
 
@@ -219,9 +222,9 @@ struct SchoolHomeView: View {
                     .padding(.top, 12)
                 Text("Siri를 부른 다음, 이렇게 말해보세요.").foregroundStyle(.secondary)
                 VStack(alignment: .leading, spacing: 12) {
-                    ShortcutsLink().accessibilityIdentifier("open-school-shortcuts")
-                        .accessibilityLabel("오늘의 학교 단축어 페이지 열기")
-                    Text("시간표·급식 단축어 페이지로 이동해요.").font(.footnote).foregroundStyle(.secondary)
+                    SchoolShortcutsEntry()
+                    NavigationLink("잘 안 되나요? 실행 점검하기") { ShortcutCheckView() }
+                        .accessibilityIdentifier("shortcut-check")
                 }.modifier(SchoolCard())
                 HStack(spacing: 16) {
                     Button { tab = 1 } label: {

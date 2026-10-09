@@ -11,6 +11,7 @@
   <key>CFBundleShortVersionString</key><string>$(MARKETING_VERSION)</string>
   <key>CFBundleVersion</key><string>$(CURRENT_PROJECT_VERSION)</string>
   <key>LSRequiresIPhoneOS</key><true/>
+  <key>LSApplicationQueriesSchemes</key><array><string>shortcuts</string></array>
   <key>UILaunchScreen</key><dict/>
   <key>UISupportedInterfaceOrientations</key><array><string>UIInterfaceOrientationPortrait</string></array>
   <key>SchoolAPIBaseURL</key><string>$(SCHOOL_API_BASE_URL)</string>
