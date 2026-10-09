@@ -1,47 +1,69 @@
 import XCTest
 
 final class SchoolTodayUITests: XCTestCase {
-    private func launch(extra: [String] = []) -> XCUIApplication {
+    private func launch(extra: [String] = [], start: Bool = true) -> XCUIApplication {
         continueAfterFailure = false
         let app = XCUIApplication()
         app.launchArguments = ["--ui-testing", "--reset-settings"] + extra
         app.launch()
+        XCTAssertTrue(app.buttons["start-onboarding"].waitForExistence(timeout: 10))
+        XCTAssertFalse(app.textFields["school-search"].exists)
+        XCTAssertFalse(app.staticTexts["connection-error"].exists)
+        capture("native-welcome", app: app)
+        if start { app.buttons["start-onboarding"].tap() }
         return app
     }
 
-    private func selectSchool(_ app: XCUIApplication) {
+    private func chooseClass(_ app: XCUIApplication) {
         let search = app.textFields["school-search"]
         XCTAssertTrue(search.waitForExistence(timeout: 10))
         XCTAssertFalse(app.textFields["server-address"].exists)
+        XCTAssertFalse(app.buttons["school-next"].isEnabled)
         search.tap(); search.typeText("테스트")
         app.buttons["학교 검색"].tap()
-        let school = app.buttons.containing(NSPredicate(format: "label CONTAINS %@", "테스트고등학교")).firstMatch
+        let school = app.buttons["테스트고등학교"]
         XCTAssertTrue(school.waitForExistence(timeout: 10)); school.tap()
+        XCTAssertTrue(app.buttons["school-next"].isEnabled)
+        capture("native-school-selected", app: app)
+        app.buttons["school-next"].tap()
         let selected = app.buttons["콘텐츠과 · 2학년 3반"]
         XCTAssertTrue(selected.waitForExistence(timeout: 10))
         XCTAssertTrue(app.buttons["클라우드보안과 · 2학년 3반"].exists)
+        XCTAssertFalse(app.buttons["class-next"].isEnabled)
         selected.tap()
-        XCTAssertTrue(app.navigationBars["Siri 시작하기"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.buttons["class-next"].isEnabled)
+        capture("native-class-selected", app: app)
+        app.buttons["class-next"].tap()
+        XCTAssertTrue(app.staticTexts["siri-guide-title"].waitForExistence(timeout: 10))
         XCTAssertFalse(app.tabBars.buttons["시간표"].exists)
-        capture("native-siri-onboarding", app: app)
-        let siri = app.switches["review-siri-guide"]
-        for _ in 0..<4 where !siri.isHittable { app.swipeUp() }
-        app.swipeUp()
-        let shortcuts = app.switches["review-shortcuts-guide"]
-        let finish = app.buttons["finish-shortcut-guide"]
-        XCTAssertFalse(finish.isEnabled)
-        // SwiftUI exposes the full Form row as the switch; tap its trailing control, not the label.
-        siri.coordinate(withNormalizedOffset: CGVector(dx: 0.9, dy: 0.5)).tap()
-        XCTAssertEqual(siri.value as? String, "1")
-        XCTAssertFalse(finish.isEnabled)
-        shortcuts.coordinate(withNormalizedOffset: CGVector(dx: 0.9, dy: 0.5)).tap()
-        XCTAssertEqual(shortcuts.value as? String, "1")
-        XCTAssertTrue(finish.isEnabled)
-        capture("native-siri-onboarding-confirmation", app: app)
+    }
+
+    private func finishGuide(_ app: XCUIApplication, from page: Int = 0) {
+        let titles = ["Siri를 켜볼까요?", "불러보세요", "열어볼까요?", "물어보세요", "부를 수도 있어요"]
+        let names = ["siri-settings", "siri-activation", "shortcuts", "app-phrases", "personal-name"]
+        for step in page..<5 {
+            XCTAssertTrue(app.staticTexts["siri-guide-title"].label.contains(titles[step]))
+            XCTAssertTrue(app.staticTexts["siri-guide-title"].isHittable)
+            capture("native-guide-\(names[step])", app: app)
+            if step == 2 { XCTAssertTrue(app.buttons["open-school-shortcuts"].isHittable) }
+            app.swipeUp()
+            capture("native-guide-\(names[step])-scrolled", app: app)
+            XCTAssertTrue(app.buttons["guide-next"].isHittable)
+            app.buttons["guide-next"].tap()
+        }
+        let finish = app.buttons["finish-onboarding"]
+        XCTAssertTrue(finish.waitForExistence(timeout: 10))
+        XCTAssertFalse(app.tabBars.buttons["홈"].exists)
+        capture("native-setup-complete", app: app)
         finish.tap()
-        XCTAssertTrue(app.tabBars.buttons["Siri"].waitForExistence(timeout: 10))
-        XCTAssertTrue(app.tabBars.buttons["Siri"].isSelected)
-        capture("native-siri-home", app: app)
+        XCTAssertTrue(app.tabBars.buttons["홈"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.tabBars.buttons["홈"].isSelected)
+        capture("native-home", app: app)
+    }
+
+    private func selectSchool(_ app: XCUIApplication) {
+        chooseClass(app)
+        finishGuide(app)
         app.tabBars.buttons["시간표"].tap()
     }
 
@@ -67,14 +89,14 @@ final class SchoolTodayUITests: XCTestCase {
         capture("native-meals", app: app)
         app.tabBars.buttons["설정"].tap()
         XCTAssertTrue(app.buttons["open-school-shortcuts"].isHittable)
-        XCTAssertTrue(app.staticTexts["오늘 시간표 듣기"].exists)
+        XCTAssertTrue(app.buttons["Siri 설정 안내 다시 보기"].exists)
         capture("native-settings", app: app)
         app.terminate()
         app.launchArguments = ["--ui-testing"]
         app.launch()
-        XCTAssertTrue(app.tabBars.buttons["Siri"].waitForExistence(timeout: 10))
-        XCTAssertTrue(app.tabBars.buttons["Siri"].isSelected)
-        XCTAssertFalse(app.buttons["finish-shortcut-guide"].exists)
+        XCTAssertTrue(app.tabBars.buttons["홈"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.tabBars.buttons["홈"].isSelected)
+        XCTAssertFalse(app.buttons["start-onboarding"].exists)
         app.tabBars.buttons["시간표"].tap()
         XCTAssertTrue(app.staticTexts["수학"].waitForExistence(timeout: 10))
         XCTAssertTrue(app.staticTexts["콘텐츠과 · 2학년 3반"].exists)
@@ -87,12 +109,42 @@ final class SchoolTodayUITests: XCTestCase {
         let delete = app.buttons["설정 삭제"]
         XCTAssertTrue(delete.waitForExistence(timeout: 5))
         delete.tap()
-        XCTAssertTrue(app.textFields["school-search"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.buttons["start-onboarding"].waitForExistence(timeout: 10))
         app.terminate()
         app.launch()
-        XCTAssertTrue(app.textFields["school-search"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.buttons["start-onboarding"].waitForExistence(timeout: 10))
         XCTAssertFalse(app.staticTexts["수학"].exists)
+        app.buttons["start-onboarding"].tap()
         selectSchool(app)
+    }
+
+    func testInterruptedSetupBackSkipAndHomeHelp() {
+        let app = launch()
+        chooseClass(app)
+        app.buttons["guide-next"].tap()
+        app.buttons["이전 단계"].tap()
+        XCTAssertTrue(app.staticTexts["siri-guide-title"].label.contains("Siri를 켜볼까요?"))
+        app.terminate()
+        app.launchArguments = ["--ui-testing"]
+        app.launch()
+        XCTAssertTrue(app.buttons["start-onboarding"].waitForExistence(timeout: 10))
+        app.buttons["start-onboarding"].tap()
+        XCTAssertTrue(app.buttons["skip-siri-setup"].waitForExistence(timeout: 10))
+        app.buttons["skip-siri-setup"].tap()
+        finishGuide(app, from: 2)
+        app.buttons["siri-help"].tap()
+        XCTAssertTrue(app.staticTexts["siri-guide-title"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.staticTexts["siri-guide-title"].label.contains("Siri를 켜볼까요?"))
+        app.buttons["닫기"].tap()
+        app.swipeUp()
+        app.buttons.containing(NSPredicate(format: "label CONTAINS %@", "급식 보기")).firstMatch.tap()
+        XCTAssertTrue(app.tabBars.buttons["급식"].isSelected)
+        XCTAssertTrue(app.staticTexts["계란국 (1)"].waitForExistence(timeout: 10))
+        app.tabBars.buttons["홈"].tap()
+        app.swipeUp()
+        app.buttons.containing(NSPredicate(format: "label CONTAINS %@", "시간표 보기")).firstMatch.tap()
+        XCTAssertTrue(app.tabBars.buttons["시간표"].isSelected)
+        XCTAssertTrue(app.staticTexts["수학"].waitForExistence(timeout: 10))
     }
 
     func testEmptyTimetableIsNotAnError() {
@@ -121,7 +173,9 @@ final class SchoolTodayUITests: XCTestCase {
     }
 
     func testBackendConnectionFailureOffersRetryWithoutAddressInput() {
-        let app = launch(extra: ["--fail-connection"])
+        let app = launch(extra: ["--fail-connection"], start: false)
+        XCTAssertFalse(app.buttons["다시 시도"].exists)
+        app.buttons["start-onboarding"].tap()
         XCTAssertTrue(app.staticTexts["connection-error"].waitForExistence(timeout: 10))
         XCTAssertTrue(app.buttons["다시 시도"].isHittable)
         XCTAssertFalse(app.textFields["server-address"].exists)

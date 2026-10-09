@@ -69,52 +69,61 @@ struct TodayView: View {
     private let timer = Timer.publish(every: 60, on: .main, in: .common).autoconnect()
 
     var body: some View {
-        List {
-            Section {
-                Text(settings.school.name).font(.title2.bold())
-                Text(settings.schoolClass.label).foregroundStyle(.secondary)
-                DemoNotice()
-                if let date = model.timetable?.date ?? model.meals?.date { Text(date).font(.caption) }
-            }
-            if model.loading { Section { ProgressView("학교 정보를 불러오는 중") } }
-            if let error = model.error {
-                Section {
-                    Label("학교 정보를 확인하지 못했어요", systemImage: "wifi.exclamationmark")
-                    Text(error).foregroundStyle(.secondary)
-                    Button("다시 시도") { refresh += 1 }
+        ScrollView {
+            VStack(alignment: .leading, spacing: 20) {
+                Text(kind == .timetable ? "오늘의\n시간표" : "오늘의\n급식").font(.largeTitle.bold())
+                VStack(alignment: .leading, spacing: 8) {
+                    Text(settings.school.name).font(.headline)
+                    Text(settings.schoolClass.label).foregroundStyle(.secondary)
+                    DemoNotice()
+                    if let date = model.timetable?.date ?? model.meals?.date { Text(date).font(.caption) }
+                }.modifier(SchoolCard())
+                if model.loading { ProgressView("학교 정보를 불러오는 중") }
+                if let error = model.error {
+                    VStack(alignment: .leading, spacing: 12) {
+                        Label("학교 정보를 확인하지 못했어요", systemImage: "wifi.exclamationmark").font(.headline)
+                        Text(error).foregroundStyle(.secondary)
+                        Button("다시 시도") { refresh += 1 }
+                    }.modifier(SchoolCard())
                 }
-            }
-            if let timetable = model.timetable {
-                Section("오늘 수업") {
+                if let timetable = model.timetable {
                     if timetable.lessons.isEmpty {
-                        Text("오늘 등록된 시간표가 없습니다.")
-                        Text("주말·휴업일이거나 학교에서 아직 자료를 제공하지 않았을 수 있습니다.").font(.footnote)
+                        VStack(alignment: .leading, spacing: 12) {
+                            Text("오늘 등록된 시간표가 없습니다.").font(.headline)
+                            Text("주말·휴업일이거나 학교에서 아직 자료를 제공하지 않았을 수 있습니다.").font(.footnote).foregroundStyle(.secondary)
+                        }.modifier(SchoolCard())
                     }
                     ForEach(timetable.lessons.sorted { $0.period < $1.period }) { lesson in
-                        HStack(spacing: 16) {
-                            Text("\(lesson.period)").font(.title2.bold()).foregroundStyle(.indigo).frame(width: 28)
-                            VStack(alignment: .leading) {
+                        HStack(spacing: 18) {
+                            Text("\(lesson.period)").font(.title2.bold()).foregroundStyle(SchoolDesign.blue).frame(width: 32)
+                            VStack(alignment: .leading, spacing: 6) {
                                 Text("\(lesson.period)교시").font(.caption).foregroundStyle(.secondary)
                                 Text(lesson.subject).font(.headline)
                                 if lesson.ambiguous == true { Text("선택 수업 · 학교 안내를 확인하세요").font(.caption) }
                             }
-                        }.padding(.vertical, 4)
+                        }.modifier(SchoolCard())
                     }
                 }
-            }
-            if let meals = model.meals {
-                if meals.meals.isEmpty {
-                    Section("오늘 급식") { Text("오늘 등록된 급식이 없습니다."); Text("주말·공휴일·방학이거나 급식을 제공하지 않는 날일 수 있습니다.").font(.footnote) }
-                }
-                ForEach(meals.meals.sorted { (Int($0.code) ?? 0) < (Int($1.code) ?? 0) }) { meal in
-                    Section(meal.name) {
-                        ForEach(Array(meal.dishes.enumerated()), id: \.offset) { _, dish in Text(dish) }
-                        if !meal.calories.isEmpty { Text(meal.calories).font(.caption).foregroundStyle(.secondary) }
+                if let meals = model.meals {
+                    if meals.meals.isEmpty {
+                        VStack(alignment: .leading, spacing: 12) {
+                            Text("오늘 등록된 급식이 없습니다.").font(.headline)
+                            Text("주말·공휴일·방학이거나 급식을 제공하지 않는 날일 수 있습니다.").font(.footnote).foregroundStyle(.secondary)
+                        }.modifier(SchoolCard())
+                    }
+                    ForEach(meals.meals.sorted { (Int($0.code) ?? 0) < (Int($1.code) ?? 0) }) { meal in
+                        VStack(alignment: .leading, spacing: 14) {
+                            Text(meal.name).font(.title3.bold()).foregroundStyle(SchoolDesign.blue)
+                            ForEach(Array(meal.dishes.enumerated()), id: \.offset) { _, dish in Text(dish) }
+                            if !meal.calories.isEmpty { Text(meal.calories).font(.caption).foregroundStyle(.secondary) }
+                        }.modifier(SchoolCard())
                     }
                 }
-            }
+            }.padding(24)
         }
+        .background(SchoolDesign.canvas)
         .navigationTitle(kind == .timetable ? "오늘 시간표" : "오늘 급식")
+        .navigationBarTitleDisplayMode(.inline)
         .toolbar { Button { refresh += 1 } label: { Image(systemName: "arrow.clockwise") }.accessibilityLabel("새로고침").disabled(model.loading) }
         .refreshable { await model.load(kind: kind, settings: settings, api: api) }
         .task(id: refresh) { await model.load(kind: kind, settings: settings, api: api) }

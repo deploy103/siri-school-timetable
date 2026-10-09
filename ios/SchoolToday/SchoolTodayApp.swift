@@ -29,7 +29,7 @@ struct SchoolTodayApp: App {
 @MainActor
 final class SchoolStore: ObservableObject {
     @Published private(set) var school: SchoolSettings?
-    @Published private(set) var shortcutGuideReviewed: Bool
+    @Published private(set) var onboardingComplete: Bool
     @Published private(set) var api: SchoolAPI?
     @Published private(set) var mode = ""
     @Published private(set) var online = true
@@ -43,7 +43,7 @@ final class SchoolStore: ObservableObject {
         self.session = session
         self.server = server
         school = SchoolPreferences.readSchool(defaults: defaults)
-        shortcutGuideReviewed = defaults.bool(forKey: "schooltoday.shortcut-guide.v1")
+        onboardingComplete = defaults.bool(forKey: "schooltoday.onboarding.v2")
         monitor.pathUpdateHandler = { [weak self] path in
             Task { @MainActor in self?.online = path.status == .satisfied }
         }
@@ -66,34 +66,38 @@ final class SchoolStore: ObservableObject {
         try SchoolPreferences.writeSchool(settings, defaults: defaults)
         school = settings
         if settings == nil {
-            shortcutGuideReviewed = false
-            defaults.removeObject(forKey: "schooltoday.shortcut-guide.v1")
+            onboardingComplete = false
+            defaults.removeObject(forKey: "schooltoday.onboarding.v2")
         }
     }
-    func finishShortcutGuide() {
-        defaults.set(true, forKey: "schooltoday.shortcut-guide.v1")
-        shortcutGuideReviewed = true
+    func finishOnboarding() {
+        defaults.set(true, forKey: "schooltoday.onboarding.v2")
+        onboardingComplete = true
     }
 }
 
 struct RootView: View {
     @EnvironmentObject private var store: SchoolStore
+    @State private var started = false
+    @State private var tab = 0
     var body: some View {
         Group {
-            if let api = store.api {
+            if !store.onboardingComplete && !started {
+                WelcomeView { started = true }
+            } else if let api = store.api {
                 if let school = store.school {
-                    if !store.shortcutGuideReviewed {
-                        NavigationStack { ShortcutGuideView(onboarding: true) }
+                    if !store.onboardingComplete {
+                        NavigationStack { SiriGuideView(onboarding: true) }
                     } else {
-                        TabView {
-                            NavigationStack { ShortcutGuideView(onboarding: false) }
-                                .tabItem { Label("Siri", systemImage: "waveform") }
+                        TabView(selection: $tab) {
+                            NavigationStack { SchoolHomeView(tab: $tab) }
+                                .tabItem { Label("홈", systemImage: "house") }.tag(0)
                             NavigationStack { TodayView(kind: .timetable, settings: school, api: api) }
-                                .tabItem { Label("시간표", systemImage: "calendar") }
+                                .tabItem { Label("시간표", systemImage: "calendar") }.tag(1)
                             NavigationStack { TodayView(kind: .meals, settings: school, api: api) }
-                                .tabItem { Label("급식", systemImage: "fork.knife") }
+                                .tabItem { Label("급식", systemImage: "fork.knife") }.tag(2)
                             NavigationStack { SettingsView() }
-                                .tabItem { Label("설정", systemImage: "gearshape") }
+                                .tabItem { Label("설정", systemImage: "gearshape") }.tag(3)
                         }
                     }
                 } else {
@@ -103,60 +107,12 @@ struct RootView: View {
                 NavigationStack { ConnectionView() }
             }
         }
-        .tint(.indigo)
-    }
-}
-
-struct ShortcutGuideView: View {
-    @EnvironmentObject private var store: SchoolStore
-    let onboarding: Bool
-    @State private var siriGuideReviewed = false
-    @State private var shortcutsGuideReviewed = false
-
-    var body: some View {
-        Form {
-            Section {
-                Text(onboarding ? "이제 Siri로 시간표와 급식을 물어보세요" : "Siri로 오늘의 학교 사용하기")
-                    .font(.title2.bold())
-                Text(store.school?.school.name ?? "")
-                Text(store.school?.schoolClass.label ?? "")
-                DemoNotice()
-            }
-            Section("1. iPhone에서 Siri 켜기") {
-                Text("iPhone의 설정 앱을 열고 ‘Siri’ 또는 ‘Apple Intelligence 및 Siri’를 찾으세요. 음성으로 Siri를 부르는 옵션을 켜고, 화면에 나오는 음성 설정을 마쳐 주세요. 메뉴 이름은 iOS 버전에 따라 다를 수 있습니다.")
-                Text("음성 호출을 쓰지 않는다면 측면 버튼(홈 버튼이 있는 기기는 홈 버튼)으로 Siri를 실행하도록 설정할 수 있습니다. 설정을 마치면 이 앱으로 돌아오세요.")
-                    .font(.footnote)
-            }
-            Section("2. 학교 단축어 열기") {
-                ShortcutsLink()
-                    .accessibilityLabel("단축어 앱에서 시간표와 급식 열기")
-                    .accessibilityIdentifier("open-school-shortcuts")
-                Text("앱의 단축어 페이지에서 ‘오늘 시간표’ 또는 ‘오늘 급식’을 실행해 보세요. 개인 단축어로도 추가할 수 있습니다. 학교·학급은 위에서 선택한 설정을 사용합니다.")
-                    .font(.footnote)
-            }
-            Section("3. Siri에게 말하기") {
-                Text("오늘의 학교 오늘 시간표 알려줘")
-                SiriTipView(intent: TodayTimetableIntent())
-                Text("오늘의 학교 오늘 급식 알려줘")
-                SiriTipView(intent: TodayMealIntent())
-                Text("Siri를 부르거나 측면·홈 버튼을 길게 누른 뒤 위 문구를 말해 보세요. 인터넷 연결이 필요합니다. 인식되지 않으면 단축어 앱에서 먼저 실행해 보고 Siri 설정을 확인하세요.")
-                    .font(.footnote)
-            }
-            if onboarding {
-                Section {
-                    Toggle("Siri 설정 안내를 확인했어요", isOn: $siriGuideReviewed)
-                        .accessibilityIdentifier("review-siri-guide")
-                    Toggle("단축어 사용 방법을 확인했어요", isOn: $shortcutsGuideReviewed)
-                        .accessibilityIdentifier("review-shortcuts-guide")
-                    Button("안내 확인하고 시작하기") { store.finishShortcutGuide() }
-                        .disabled(!siriGuideReviewed || !shortcutsGuideReviewed)
-                        .accessibilityIdentifier("finish-shortcut-guide")
-                } footer: {
-                    Text("앱은 Siri가 켜졌는지나 개인 단축어 추가 여부를 확인할 수 없습니다. 안내 확인은 실제 실행 성공을 의미하지 않습니다. 이 안내는 첫 번째 Siri 탭에서 언제든 다시 볼 수 있습니다.")
-                }
-            }
+        .tint(SchoolDesign.blue)
+        .foregroundStyle(SchoolDesign.ink)
+        .onChange(of: store.school) { _, school in
+            tab = 0
+            if school == nil { started = false }
         }
-        .navigationTitle(onboarding ? "Siri 시작하기" : "Siri와 단축어")
     }
 }
 
@@ -176,29 +132,24 @@ struct ConnectionView: View {
     @State private var loading = false
     @State private var attempt = 0
     var body: some View {
-        Form {
-            Section {
-                HStack(spacing: 12) {
-                    Image(systemName: "graduationcap.fill").font(.title).foregroundStyle(.indigo).accessibilityHidden(true)
-                    Text("오늘의 학교").font(.largeTitle.bold())
-                }
-                Text("학교 시간표와 급식을 확인하고 Siri로 바로 물어보세요.")
-            }
-            Section {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 28) {
+                SchoolBrand()
+                Text("내 학교를\n연결하고 있어요").font(.largeTitle.bold())
                 if loading { ProgressView("학교 정보를 준비하고 있어요") }
                 if store.server.isEmpty {
                     Text("서비스 연결이 아직 준비되지 않았습니다.")
                 } else if error != nil {
                     Button("다시 시도") { attempt += 1 }.disabled(loading)
+                        .buttonStyle(SchoolPrimaryButtonStyle())
                 }
                 if let error { Text(error).foregroundStyle(.red).accessibilityIdentifier("connection-error") }
-            } header: {
-                Text("학교 정보 연결")
-            } footer: {
                 Text("학교 정보를 확인하려면 인터넷 연결이 필요합니다.")
-            }
+                    .font(.footnote).foregroundStyle(.secondary)
+            }.padding(28)
         }
-        .navigationTitle("시작하기")
+        .background(SchoolDesign.canvas)
+        .toolbar(.hidden, for: .navigationBar)
         .task(id: attempt) {
             guard !store.server.isEmpty else { return }
             loading = true; error = nil
@@ -217,35 +168,56 @@ struct SchoolSearchView: View {
     @State private var schools: [School] = []
     @State private var loading = false
     @State private var error: String?
+    @State private var selectedSchool: School?
+    @FocusState private var searchFocused: Bool
     var body: some View {
-        List {
-            Section {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 22) {
+                Text("1 / 7 · 학교 선택").font(.caption).foregroundStyle(SchoolDesign.blue)
+                Text("어느 학교에\n다니고 있나요?").font(.largeTitle.bold())
+                Text("학교 이름을 검색한 뒤 내 학교를 선택하세요.").foregroundStyle(.secondary)
                 DemoNotice()
-                TextField("학교 이름 (두 글자 이상)", text: $name).accessibilityIdentifier("school-search")
-                Button("학교 검색") { submitted = name.trimmingCharacters(in: .whitespacesAndNewlines); searchAttempt += 1 }
+                TextField("학교 이름 (두 글자 이상)", text: $name)
+                    .padding(18).background(SchoolDesign.card, in: RoundedRectangle(cornerRadius: 16))
+                    .accessibilityIdentifier("school-search")
+                    .focused($searchFocused).submitLabel(.search).onSubmit(search)
+                Button("학교 검색", action: search)
                     .disabled(name.trimmingCharacters(in: .whitespacesAndNewlines).count < 2 || loading)
+                    .buttonStyle(SchoolPrimaryButtonStyle())
                 if loading { ProgressView("학교를 찾고 있어요") }
                 if let error { Text(error).foregroundStyle(.red) }
-            }
-            Section("검색 결과") {
                 ForEach(schools) { school in
-                    NavigationLink {
-                        ClassSelectionView(api: api, school: school)
-                    } label: {
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text(school.name).font(.headline)
-                            Text("\(school.kind) · \(school.address)").font(.caption).foregroundStyle(.secondary)
-                        }
-                    }
+                    Button { selectedSchool = school } label: {
+                        HStack {
+                            VStack(alignment: .leading, spacing: 6) {
+                                Text(school.name).font(.headline)
+                                Text("\(school.kind) · \(school.address)").font(.caption).foregroundStyle(.secondary)
+                            }
+                            Spacer()
+                            Image(systemName: selectedSchool == school ? "checkmark.circle.fill" : "circle")
+                                .foregroundStyle(SchoolDesign.blue)
+                        }.modifier(SchoolCard())
+                    }.buttonStyle(.plain)
+                        .accessibilityLabel(school.name)
+                        .accessibilityValue(selectedSchool == school ? "선택됨" : "선택 안 됨")
                 }
                 if !submitted.isEmpty && !loading && error == nil && schools.isEmpty { Text("검색된 학교가 없습니다.") }
-            }
+            }.padding(28)
         }
-        .navigationTitle("내 학교 선택")
-        .onChange(of: name) { _, _ in submitted = ""; schools = []; loading = false; error = nil; searchAttempt += 1 }
+        .background(SchoolDesign.canvas)
+        .navigationTitle("내 학교").navigationBarTitleDisplayMode(.inline)
+        .safeAreaInset(edge: .bottom) {
+            NavigationLink {
+                if let selectedSchool { ClassSelectionView(api: api, school: selectedSchool) }
+            } label: { Label("다음", systemImage: "arrow.right") }
+                .buttonStyle(SchoolPrimaryButtonStyle()).disabled(selectedSchool == nil)
+                .accessibilityIdentifier("school-next")
+                .padding(24).background(SchoolDesign.canvas)
+        }
+        .onChange(of: name) { _, _ in submitted = ""; schools = []; selectedSchool = nil; loading = false; error = nil; searchAttempt += 1 }
         .task(id: searchAttempt) {
             guard submitted.count >= 2 else { return }
-            loading = true; error = nil; schools = []
+            loading = true; error = nil; schools = []; selectedSchool = nil
             defer { if !Task.isCancelled { loading = false } }
             do {
                 let result = try await api.schools(name: submitted)
@@ -253,6 +225,14 @@ struct SchoolSearchView: View {
                 schools = result
             } catch { if !Task.isCancelled { self.error = error.localizedDescription } }
         }
+    }
+
+    private func search() {
+        let query = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard query.count >= 2 && !loading else { return }
+        searchFocused = false
+        submitted = query
+        searchAttempt += 1
     }
 }
 
@@ -264,22 +244,45 @@ struct ClassSelectionView: View {
     @State private var error: String?
     @State private var loading = true
     @State private var attempt = 0
+    @State private var selectedClass: SchoolClass?
     var body: some View {
-        List {
-            Section { Text(school.name).font(.headline); DemoNotice() }
-            Section("학과·학년·반 선택") {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 22) {
+                Text("2 / 7 · 학급 선택").font(.caption).foregroundStyle(SchoolDesign.blue)
+                Text("내 학급을\n알려주세요").font(.largeTitle.bold())
+                Text(school.name).font(.headline)
+                Text("학과·학년·반을 확인하고 다음으로 넘어가세요.").foregroundStyle(.secondary)
+                DemoNotice()
                 if loading { ProgressView("학급을 불러오는 중") }
                 if let error { Text(error).foregroundStyle(.red); Button("다시 시도") { attempt += 1 } }
                 ForEach(classes) { schoolClass in
-                    Button(schoolClass.label) {
-                        do { try store.saveSchool(SchoolSettings(school: school, schoolClass: schoolClass)) }
-                        catch { self.error = error.localizedDescription }
-                    }
+                    Button { selectedClass = schoolClass } label: {
+                        HStack {
+                            Text(schoolClass.label).font(.headline)
+                            Spacer()
+                            Image(systemName: selectedClass == schoolClass ? "checkmark.circle.fill" : "circle")
+                                .foregroundStyle(SchoolDesign.blue)
+                        }.modifier(SchoolCard())
+                    }.buttonStyle(.plain)
+                        .accessibilityLabel(schoolClass.label)
+                        .accessibilityValue(selectedClass == schoolClass ? "선택됨" : "선택 안 됨")
                 }
                 if !loading && error == nil && classes.isEmpty { Text("학교에서 제공한 학급이 없습니다. 학교에 문의해 주세요.") }
-            }
+            }.padding(28)
         }
-        .navigationTitle("학급 선택")
+        .background(SchoolDesign.canvas)
+        .navigationTitle("내 학급").navigationBarTitleDisplayMode(.inline)
+        .safeAreaInset(edge: .bottom) {
+            Button {
+                if let selectedClass {
+                    do { try store.saveSchool(SchoolSettings(school: school, schoolClass: selectedClass)) }
+                    catch { self.error = error.localizedDescription }
+                }
+            } label: { Label("다음", systemImage: "arrow.right") }
+                .buttonStyle(SchoolPrimaryButtonStyle()).disabled(selectedClass == nil)
+                .accessibilityIdentifier("class-next")
+                .padding(24).background(SchoolDesign.canvas)
+        }
         .task(id: attempt) {
             loading = true; error = nil
             defer { if !Task.isCancelled { loading = false } }
@@ -294,36 +297,35 @@ struct SettingsView: View {
     @State private var reset = false
     @State private var error: String?
     var body: some View {
-        Form {
-            Section("내 학교") {
-                Text(store.school?.school.name ?? "학교 미설정")
-                Text(store.school?.schoolClass.label ?? "")
-                Button("학교 변경") {
-                    do { try store.saveSchool(nil) } catch { self.error = error.localizedDescription }
-                }
-            }
-            Section("Siri와 단축어") {
-                NavigationLink("Siri 설정 안내 다시 보기") { ShortcutGuideView(onboarding: false) }
-                ShortcutsLink()
-                    .accessibilityLabel("단축어 앱에서 시간표와 급식 열기")
-                    .accessibilityIdentifier("open-school-shortcuts")
-                Text("위 버튼을 누르면 오늘의 학교 단축어 페이지가 열립니다. 시간표·급식을 바로 실행하거나 원하는 항목을 개인 단축어로 추가하세요.")
-                    .font(.footnote)
-                Label("오늘 시간표 듣기", systemImage: "calendar")
-                SiriTipView(intent: TodayTimetableIntent())
-                Label("오늘 급식 듣기", systemImage: "fork.knife")
-                SiriTipView(intent: TodayMealIntent())
-                Text("학교·학급 설정은 단축어에도 자동으로 반영됩니다. Siri에 ‘오늘의 학교 오늘 시간표 알려줘’ 또는 ‘오늘의 학교 오늘 급식 알려줘’라고 말해 보세요.")
-                    .font(.footnote)
-            }
-            Section("데이터와 개인정보") {
-                DemoNotice()
-                Text("인터넷 연결이 필요합니다. 학교 설정은 이 기기에 저장됩니다. NEIS 키와 Apple 로그인 정보는 앱에 저장하지 않습니다.")
-                Button("학교 설정 초기화", role: .destructive) { reset = true }
-                if let error { Text(error).foregroundStyle(.red) }
-            }
+        ScrollView {
+            VStack(alignment: .leading, spacing: 24) {
+                Text("내 학교와\n사용 방법").font(.largeTitle.bold())
+                VStack(alignment: .leading, spacing: 12) {
+                    Text(store.school?.school.name ?? "학교 미설정").font(.headline)
+                    Text(store.school?.schoolClass.label ?? "").foregroundStyle(.secondary)
+                    Button("학교 변경") {
+                        do { try store.saveSchool(nil) } catch { self.error = error.localizedDescription }
+                    }
+                }.modifier(SchoolCard())
+                VStack(alignment: .leading, spacing: 16) {
+                    NavigationLink("Siri 설정 안내 다시 보기") { SiriGuideView(onboarding: false) }
+                    ShortcutsLink().accessibilityIdentifier("open-school-shortcuts")
+                        .accessibilityLabel("오늘의 학교 단축어 페이지 열기")
+                    Text("앱 호출 문구와 개인 단축어 이름은 달라요. 안내에서 Siri 설정, 이름 변경과 웹 검색이 나올 때의 확인 방법을 볼 수 있어요.")
+                        .font(.footnote).foregroundStyle(.secondary)
+                }.modifier(SchoolCard())
+                VStack(alignment: .leading, spacing: 16) {
+                    Text("데이터와 개인정보").font(.headline)
+                    DemoNotice()
+                    Text("인터넷 연결이 필요합니다. 학교 설정은 이 기기에 저장됩니다. NEIS 키와 Apple 로그인 정보는 앱에 저장하지 않습니다.")
+                        .font(.footnote).foregroundStyle(.secondary)
+                    Button("학교 설정 초기화", role: .destructive) { reset = true }
+                    if let error { Text(error).foregroundStyle(.red) }
+                }.modifier(SchoolCard())
+            }.padding(24)
         }
-        .navigationTitle("설정")
+        .background(SchoolDesign.canvas)
+        .navigationTitle("설정").navigationBarTitleDisplayMode(.inline)
         .confirmationDialog("저장된 학교 설정을 삭제할까요?", isPresented: $reset, titleVisibility: .visible) {
             Button("설정 삭제", role: .destructive) {
                 do { try store.saveSchool(nil) } catch { self.error = error.localizedDescription }

@@ -27,8 +27,10 @@ struct TodayMealIntent: AppIntent {
 }
 
 struct SchoolShortcuts: AppShortcutsProvider {
+    static let timetableExample = "오늘의 학교 시간표 알려줘"
+    static let mealExample = "오늘의 학교 급식 알려줘"
     static var appShortcuts: [AppShortcut] {
-        AppShortcut(intent: TodayTimetableIntent(), phrases: ["\(.applicationName) 오늘 시간표 알려줘"], shortTitle: "오늘 시간표", systemImageName: "calendar")
-        AppShortcut(intent: TodayMealIntent(), phrases: ["\(.applicationName) 오늘 급식 알려줘"], shortTitle: "오늘 급식", systemImageName: "fork.knife")
+        AppShortcut(intent: TodayTimetableIntent(), phrases: ["\(.applicationName) 시간표 알려줘", "\(.applicationName) 오늘 시간표 알려줘"], shortTitle: "오늘 시간표", systemImageName: "calendar")
+        AppShortcut(intent: TodayMealIntent(), phrases: ["\(.applicationName) 급식 알려줘", "\(.applicationName) 오늘 급식 알려줘"], shortTitle: "오늘 급식", systemImageName: "fork.knife")
     }
 }
