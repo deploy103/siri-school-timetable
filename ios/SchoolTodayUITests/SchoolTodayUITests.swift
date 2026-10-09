@@ -30,9 +30,12 @@ final class SchoolTodayUITests: XCTestCase {
         let shortcuts = app.switches["review-shortcuts-guide"]
         let finish = app.buttons["finish-shortcut-guide"]
         XCTAssertFalse(finish.isEnabled)
-        siri.tap()
+        // SwiftUI exposes the full Form row as the switch; tap its trailing control, not the label.
+        siri.coordinate(withNormalizedOffset: CGVector(dx: 0.9, dy: 0.5)).tap()
+        XCTAssertEqual(siri.value as? String, "1")
         XCTAssertFalse(finish.isEnabled)
-        shortcuts.tap()
+        shortcuts.coordinate(withNormalizedOffset: CGVector(dx: 0.9, dy: 0.5)).tap()
+        XCTAssertEqual(shortcuts.value as? String, "1")
         XCTAssertTrue(finish.isEnabled)
         capture("native-siri-onboarding-confirmation", app: app)
         finish.tap()
