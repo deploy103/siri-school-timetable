@@ -45,6 +45,8 @@ Siri 설정 안내는 [Apple의 Siri 사용 가이드](https://support.apple.com
 
 Apple `ShortcutsLink` 버튼으로 이 앱의 App Shortcuts 페이지를 연다. 시간표·급식을 바로 실행하거나 개인 단축어로 추가할 수 있다. 각 기능의 `SiriTipView`와 한국어 문구 안내도 제공한다. App Shortcuts 자체는 앱 설치 시 시스템이 발견하므로 별도 수동 등록이나 임의 iCloud 공유 링크가 필요하지 않다. 개인 단축어 추가는 사용자가 단축어 앱에서 선택하며, 앱은 버튼을 눌렀다는 이유로 등록 완료를 표시하지 않는다.
 
+개인 단축어로 저장하는 단계는 [Apple의 앱 단축어 가이드](https://support.apple.com/ko-kr/guide/shortcuts/apd43295406d/ios)에 따라 원하는 앱 단축어의 메뉴 → ‘새로운 단축어에서 사용’ → 편집 화면에서 이름 설정·완료로 안내한다. 시스템 메뉴 위치는 버전별로 달라질 수 있다.
+
 **앱 단축어**는 앱 이름을 포함한다. ‘시리야’로 Siri를 부른 다음 ‘오늘의 학교 시간표 알려줘’ 또는 ‘오늘의 학교 급식 알려줘’라고 말한다. 기존 ‘오늘의 학교 오늘 시간표 알려줘’, ‘오늘의 학교 오늘 급식 알려줘’도 유지한다. App Shortcuts의 문구 변형 매칭은 모든 자유 문장을 보장하는 기능이 아니다([Apple App Shortcuts 가이드](https://developer.apple.com/design/human-interface-guidelines/app-shortcuts)).
 
 **개인 단축어**는 [저장한 이름으로 호출](https://support.apple.com/guide/shortcuts/run-shortcuts-with-siri-apd07c25bb38/ios)한다. 이름이 ‘학교 시간표’면 ‘시리야, 학교 시간표’라고 말한다. ‘오늘 학교 시간표’로 부르고 싶다면 [이름도 그렇게 변경](https://support.apple.com/ko-kr/guide/shortcuts/apdd57094696/ios)하도록 안내한다. 사용자가 보고한 웹 검색 전환은 아직 실기기에서 재현하지 못했으므로 원인을 확정하지 않는다. 앱에서는 단축어 앱의 직접 실행, 문구 확인, 이름 변경 순서로 확인하도록 안내한다.

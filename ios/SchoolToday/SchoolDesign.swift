@@ -131,7 +131,8 @@ struct SiriGuideView: View {
                         ShortcutsLink().accessibilityIdentifier("open-school-shortcuts")
                             .accessibilityLabel("오늘의 학교 단축어 페이지 열기")
                         GuideInstruction(number: 1, title: "단축어 페이지 열기", detail: "위 버튼으로 단축어 앱의 오늘의 학교 페이지를 열어요. ‘오늘 시간표’ 또는 ‘오늘 급식’을 눌러 실행해 보세요.")
-                        GuideInstruction(number: 2, title: "내 단축어로 추가하기", detail: "단축어 앱에서 원하는 항목을 개인 단축어로 추가할 수도 있어요. 이름을 바꾸면 Siri에게 말할 이름도 바뀝니다. 아래 다음 단계에서 예시를 볼 수 있어요.")
+                        GuideInstruction(number: 2, title: "내 단축어로 추가하기", detail: "원하는 앱 단축어의 메뉴를 열고 ‘새로운 단축어에서 사용’을 누르세요. 편집 화면에서 이름을 정하고 완료하면 내 단축어에 저장돼요. 메뉴 위치는 iOS 버전에 따라 달라질 수 있어요.")
+                        Link("Apple의 앱 단축어 추가 안내", destination: URL(string: "https://support.apple.com/ko-kr/guide/shortcuts/apd43295406d/ios")!)
                         Text("학교·학급은 이 앱에 저장한 설정을 사용해요. 단축어를 추가했는지는 앱이 확인할 수 없어요.").font(.footnote).foregroundStyle(.secondary)
                     case 3:
                         Text("앱 단축어는 앱 이름 ‘오늘의 학교’를 포함한 문구로 불러요. 먼저 Siri를 부르거나 버튼으로 실행한 뒤 말해보세요.").foregroundStyle(.secondary)
