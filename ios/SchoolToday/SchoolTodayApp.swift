@@ -135,7 +135,7 @@ struct ConnectionView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 28) {
                 SchoolBrand()
-                Text("내 학교를\n연결하고 있어요").font(.largeTitle.bold())
+                Text(store.server.isEmpty || error != nil ? "학교 연결을\n확인해 주세요" : "내 학교를\n연결하고 있어요").font(.largeTitle.bold())
                 if loading { ProgressView("학교 정보를 준비하고 있어요") }
                 if store.server.isEmpty {
                     Text("서비스 연결이 아직 준비되지 않았습니다.")
@@ -146,7 +146,7 @@ struct ConnectionView: View {
                 if let error { Text(error).foregroundStyle(.red).accessibilityIdentifier("connection-error") }
                 Text("학교 정보를 확인하려면 인터넷 연결이 필요합니다.")
                     .font(.footnote).foregroundStyle(.secondary)
-            }.padding(28)
+            }.frame(maxWidth: .infinity, alignment: .leading).padding(28)
         }
         .background(SchoolDesign.canvas)
         .toolbar(.hidden, for: .navigationBar)
