@@ -1,7 +1,7 @@
 import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
-import { TEACHER_AUTO_REFRESH_MS, TeacherPage } from "@/components/teacher-page";
+import { TeacherPage } from "@/components/teacher-page";
 import { TEACHER_STORAGE_KEY } from "@/hooks/use-teacher-settings";
 import { decodeTeacherProfile } from "@/lib/teacher-profile";
 import type { TeacherSettings, TeacherTimetable } from "@/types/teacher";
@@ -101,6 +101,25 @@ describe("Hansei teacher page", () => {
     expect(window.localStorage.getItem(TEACHER_STORAGE_KEY)).toBeNull();
   });
 
+  it("can save and reset a session profile when storage is blocked", async () => {
+    const user = userEvent.setup();
+    for (const method of ["getItem", "setItem", "removeItem"] as const) {
+      vi.spyOn(Storage.prototype, method).mockImplementation(() => {
+        throw new DOMException("Storage blocked", "SecurityError");
+      });
+    }
+    vi.stubGlobal("fetch", setupFetch());
+    render(<TeacherPage />);
+    expect(await screen.findByRole("status")).toHaveTextContent("현재 화면에서만 유지");
+    await user.click(await screen.findByRole("checkbox", { name: "클라우드 보안" }));
+    await user.click(await screen.findByRole("checkbox", { name: /클보 2학년 1반/ }));
+    await user.click(screen.getByRole("button", { name: "설정 저장" }));
+    expect(await screen.findByText("1개 수업")).toBeVisible();
+    expect(screen.getByText("클보 2학년 1반")).toBeVisible();
+    await user.click(screen.getByRole("button", { name: /초기화/ }));
+    expect(await screen.findByRole("heading", { name: "한세 교사용 시간표" })).toBeVisible();
+  });
+
   it("restores settings, edits them, and resets them", async () => {
     const user = userEvent.setup();
     window.localStorage.setItem(TEACHER_STORAGE_KEY, JSON.stringify(storedSettings));
@@ -151,7 +170,7 @@ describe("Hansei teacher page", () => {
       await act(() => vi.advanceTimersByTimeAsync(1));
       await act(() => vi.advanceTimersByTimeAsync(1));
       expect(fetchMock.mock.calls.filter(([url]) => String(url).startsWith("/api/hansei-t/timetable?"))).toHaveLength(1);
-      await act(() => vi.advanceTimersByTimeAsync(TEACHER_AUTO_REFRESH_MS));
+      await act(() => vi.advanceTimersByTimeAsync(30 * 60_000));
       expect(fetchMock.mock.calls.filter(([url]) => String(url).startsWith("/api/hansei-t/timetable?"))).toHaveLength(2);
     } finally {
       unmount();

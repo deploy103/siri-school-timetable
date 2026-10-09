@@ -40,7 +40,7 @@ describe("MealView", () => {
 
     expect(screen.getByText("급식을 불러오는 중입니다.")).toBeInTheDocument();
     expect(await screen.findByRole("heading", { name: "한세사이버보안고등학교" })).toBeVisible();
-    const cards = screen.getAllByRole("article");
+    const cards = await screen.findAllByRole("article");
     expect(within(cards[0]!).getByRole("heading", { name: "조식" })).toBeVisible();
     expect(within(cards[1]!).getByRole("heading", { name: "중식" })).toBeVisible();
     expect(within(cards[2]!).getByRole("heading", { name: "석식" })).toBeVisible();
@@ -49,7 +49,7 @@ describe("MealView", () => {
     expect(screen.queryByText("782.3 Kcal")).not.toBeInTheDocument();
     expect(fetchMock).toHaveBeenCalledWith(
       "/api/meal/today?officeCode=B10&schoolCode=7010911",
-      { cache: "no-store" },
+      { cache: "no-store", signal: expect.any(AbortSignal) },
     );
   });
 

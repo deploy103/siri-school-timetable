@@ -1,0 +1,50 @@
+name: SchoolToday
+options:
+  bundleIdPrefix: com.deploy103
+  developmentLanguage: ko
+  deploymentTarget:
+    iOS: "17.0"
+settings:
+  base:
+    SWIFT_VERSION: "5.0"
+    DEVELOPMENT_TEAM: ""
+    SCHOOL_API_BASE_URL: "https://time.mvtp.cloud"
+    GENERATE_INFOPLIST_FILE: NO
+targets:
+  SchoolToday:
+    type: application
+    platform: iOS
+    sources: [SchoolToday]
+    settings:
+      base:
+        TARGETED_DEVICE_FAMILY: "1"
+        PRODUCT_BUNDLE_IDENTIFIER: com.deploy103.schooltoday
+        INFOPLIST_FILE: SchoolToday/Info.plist
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        MARKETING_VERSION: "0.1.0"
+        CURRENT_PROJECT_VERSION: "1"
+  SchoolTodayTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources: [SchoolTodayTests]
+    dependencies:
+      - target: SchoolToday
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+  SchoolTodayUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources: [SchoolTodayUITests]
+    dependencies:
+      - target: SchoolToday
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+schemes:
+  SchoolToday:
+    build:
+      targets:
+        SchoolToday: all
+    test:
+      targets: [SchoolTodayTests, SchoolTodayUITests]

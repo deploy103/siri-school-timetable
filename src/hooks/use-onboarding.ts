@@ -12,6 +12,8 @@ export function useOnboarding() {
     const restoreTimer = window.setTimeout(() => {
       try {
         setDismissed(window.localStorage.getItem(STORAGE_KEY) === "1");
+      } catch {
+        // The guide remains usable when browser storage is blocked.
       } finally {
         setIsRestoring(false);
       }
@@ -20,12 +22,16 @@ export function useOnboarding() {
   }, []);
 
   const dismiss = useCallback(() => {
-    window.localStorage.setItem(STORAGE_KEY, "1");
+    try {
+      window.localStorage.setItem(STORAGE_KEY, "1");
+    } catch { /* Keep the choice for this session only. */ }
     setDismissed(true);
   }, []);
 
   const show = useCallback(() => {
-    window.localStorage.removeItem(STORAGE_KEY);
+    try {
+      window.localStorage.removeItem(STORAGE_KEY);
+    } catch { /* Keep the choice for this session only. */ }
     setDismissed(false);
   }, []);
 

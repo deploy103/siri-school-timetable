@@ -179,6 +179,67 @@ describe("NEIS parsing", () => {
 });
 
 describe("NeisClient", () => {
+  it("returns schools beyond the first page without losing the office filter", async () => {
+    const requested: URL[] = [];
+    const fetchImplementation: typeof fetch = vi.fn(async (input) => {
+      const url = new URL(String(input));
+      requested.push(url);
+      const page = Number(url.searchParams.get("pIndex"));
+      const row = Array.from({ length: page === 1 ? 100 : 1 }, (_, index) => ({
+        ATPT_OFCDC_SC_CODE: "B10",
+        SD_SCHUL_CODE: String((page - 1) * 100 + index + 1),
+        SCHUL_NM: `미래학교 ${(page - 1) * 100 + index + 1}`,
+        SCHUL_KND_SC_NM: "중학교",
+      }));
+      return new Response(JSON.stringify({ schoolInfo: [
+        { head: [{ list_total_count: 101 }, { RESULT: { CODE: "INFO-000" } }] },
+        { row },
+      ] }));
+    });
+    const client = new NeisClient({ apiKey: "test", fetchImplementation });
+    const schools = await client.searchSchools("미래학교", "B10");
+    expect(schools).toHaveLength(101);
+    expect(schools).toContainEqual(expect.objectContaining({ schoolCode: "101" }));
+    expect(requested.map((url) => url.searchParams.get("pIndex"))).toEqual(["1", "2"]);
+    expect(requested.every((url) => url.searchParams.get("ATPT_OFCDC_SC_CODE") === "B10")).toBe(true);
+  });
+
+  it("rejects incomplete school search results instead of hiding missing schools", async () => {
+    const fetchImplementation: typeof fetch = vi.fn(async () => new Response(JSON.stringify({
+      schoolInfo: [
+        { head: [{ list_total_count: 101 }, { RESULT: { CODE: "INFO-000" } }] },
+        { row: [] },
+      ],
+    })));
+    const client = new NeisClient({ apiKey: "test", fetchImplementation });
+    await expect(client.searchSchools("미래")).rejects.toMatchObject({ code: "NEIS_ERROR" });
+  });
+
+  it("loads all class pages while preserving school and academic-year parameters", async () => {
+    const requested: URL[] = [];
+    const fetchImplementation: typeof fetch = vi.fn(async (input) => {
+      const url = new URL(String(input));
+      requested.push(url);
+      const page = Number(url.searchParams.get("pIndex"));
+      return new Response(JSON.stringify({ classInfo: [
+        { head: [{ list_total_count: 1001 }, { RESULT: { CODE: "INFO-000" } }] },
+        { row: Array.from({ length: page === 1 ? 1000 : 1 }, (_, index) => ({
+          GRADE: "2", CLASS_NM: String((page - 1) * 1000 + index + 1),
+        })) },
+      ] }));
+    });
+    const client = new NeisClient({ apiKey: "test", fetchImplementation });
+    const classes = await client.getSchoolClasses("C10", "7011234", 2026);
+    expect(classes).toHaveLength(1001);
+    expect(classes.at(-1)).toEqual({ grade: 2, className: "1001" });
+    expect(requested.map((url) => url.searchParams.get("pIndex"))).toEqual(["1", "2"]);
+    for (const url of requested) {
+      expect(url.searchParams.get("ATPT_OFCDC_SC_CODE")).toBe("C10");
+      expect(url.searchParams.get("SD_SCHUL_CODE")).toBe("7011234");
+      expect(url.searchParams.get("AY")).toBe("2026");
+    }
+  });
+
   it("logs explicit mock mode in production without logging an API key", () => {
     vi.stubEnv("NODE_ENV", "production");
     const warning = vi.spyOn(console, "warn").mockImplementation(() => undefined);

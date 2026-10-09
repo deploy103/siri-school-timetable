@@ -1,6 +1,39 @@
 import { expect, test } from "@playwright/test";
 
-test("mobile-first setup, timetable, persistence, and Siri flow", async ({ page }) => {
+test.beforeEach(async ({ context }, testInfo) => {
+  // Emulate a proxy that replaces client-supplied forwarding headers.
+  await context.setExtraHTTPHeaders({ "x-forwarded-for": `192.0.2.${testInfo.workerIndex + 1}` });
+});
+
+test("timetable and meals recover on reconnection without reloading the app", async ({ page, context }) => {
+  await page.addInitScript(() => {
+    localStorage.setItem("time-siri.school-settings.v1", JSON.stringify({
+      school: { officeCode: "C10", schoolCode: "C100000001", name: "부산미래중학교", kind: "중학교", region: "부산광역시교육청", address: "부산광역시 부산진구 미래로 1" },
+      grade: 2, className: "1",
+    }));
+  });
+  await page.goto("/");
+  const errorCard = page.getByRole("main").getByRole("alert");
+  await expect(page.getByText("자료구조", { exact: true })).toBeVisible();
+  await context.setOffline(true);
+  await page.getByRole("button", { name: "새로고침", exact: true }).click();
+  await expect(errorCard).toContainText("인터넷 연결을 확인");
+  await expect(page.getByText("자료구조", { exact: true })).toBeHidden();
+  await context.setOffline(false);
+  await expect(page.getByText("자료구조", { exact: true })).toBeVisible();
+  await expect(errorCard).toBeHidden();
+
+  await page.getByRole("button", { name: "급식", exact: true }).click();
+  await expect(page.getByText("제육볶음 (5.6.10)")).toBeVisible();
+  await context.setOffline(true);
+  await page.getByRole("button", { name: "새로고침", exact: true }).click();
+  await expect(errorCard).toContainText("인터넷 연결을 확인");
+  await context.setOffline(false);
+  await expect(page.getByText("제육볶음 (5.6.10)")).toBeVisible();
+  await expect(errorCard).toBeHidden();
+});
+
+test("mobile-first setup, timetable, persistence, and Siri flow", async ({ page }, testInfo) => {
   const consoleErrors: string[] = [];
   page.on("console", (message) => {
     if (message.type() === "error") consoleErrors.push(message.text());
@@ -27,6 +60,7 @@ test("mobile-first setup, timetable, persistence, and Siri flow", async ({ page 
   await expect(page.getByRole("heading", { name: "부산미래중학교" })).toBeVisible();
   await expect(page.getByText("자료구조", { exact: true })).toBeVisible();
   await expect(page.getByRole("listitem").first()).toContainText("1교시");
+  await page.screenshot({ path: testInfo.outputPath("timetable.png"), fullPage: true });
 
   await page.reload();
   await expect(page.getByRole("heading", { name: "부산미래중학교" })).toBeVisible();
@@ -62,6 +96,65 @@ test("mobile-first setup, timetable, persistence, and Siri flow", async ({ page 
   );
   expect(hasHorizontalOverflow).toBe(false);
   expect(consoleErrors).toEqual([]);
+});
+
+test("home-screen metadata, icons, and honest online-only installation guide", async ({ page, request }, testInfo) => {
+  await page.goto("/guide");
+  const section = page.locator("section", { has: page.getByRole("heading", { name: "휴대폰 홈 화면에 추가하기" }) });
+  await expect(section).toContainText("Safari");
+  await expect(section).toContainText("Chrome");
+  await expect(section).toContainText("인터넷 연결이 필요");
+  await expect(section).toContainText("자동 등록하지 않아요");
+  await expect(page.locator('meta[name="mobile-web-app-capable"]')).toHaveAttribute("content", "yes");
+  const manifestUrl = await page.locator('link[rel="manifest"]').getAttribute("href");
+  expect(manifestUrl).toBeTruthy();
+  const response = await request.get(manifestUrl!);
+  expect(response.ok()).toBe(true);
+  const manifest = await response.json();
+  expect(manifest).toMatchObject({ start_url: "/", scope: "/", display: "standalone", lang: "ko" });
+  for (const icon of manifest.icons) {
+    const response = await request.get(icon.src);
+    expect(response.ok()).toBe(true);
+    expect(response.headers()["content-type"]).toContain("image/png");
+    const bytes = await response.body();
+    const size = Number(icon.sizes.split("x")[0]);
+    expect(bytes.readUInt32BE(16)).toBe(size);
+    expect(bytes.readUInt32BE(20)).toBe(size);
+  }
+  const appleIcon = await page.locator('link[rel="apple-touch-icon"]').getAttribute("href");
+  expect((await request.get(appleIcon!)).ok()).toBe(true);
+  await section.screenshot({ path: testInfo.outputPath("installation-guide.png") });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)).toBe(false);
+});
+
+test("blocked browser storage still allows session setup, guide controls, and meals", async ({ page }, testInfo) => {
+  const pageErrors: string[] = [];
+  page.on("pageerror", (error) => pageErrors.push(error.message));
+  await page.addInitScript(() => {
+    for (const method of ["getItem", "setItem", "removeItem"]) {
+      Object.defineProperty(Storage.prototype, method, { value: () => {
+        throw new DOMException("Storage blocked", "SecurityError");
+      } });
+    }
+  });
+  await page.goto("/");
+  await expect(page.getByRole("status")).toContainText("현재 화면에서만 유지");
+  await page.getByRole("button", { name: "이미 설정했어요" }).click();
+  await page.getByLabel("학교 이름").fill("미래");
+  await page.getByRole("button", { name: "검색" }).click();
+  await page.getByRole("button", { name: /부산미래중학교/ }).click();
+  await page.getByRole("button", { name: "설정 저장하고 시간표 보기" }).click();
+  await expect(page.getByRole("dialog")).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(page.getByText("자료구조", { exact: true })).toBeVisible();
+  await page.screenshot({ path: testInfo.outputPath("storage-unavailable.png"), fullPage: true });
+  await page.getByRole("button", { name: "급식", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "중식" })).toBeVisible();
+  await page.getByRole("button", { name: "가이드 다시 보기" }).click();
+  await expect(page.getByRole("button", { name: "이미 설정했어요" })).toBeVisible();
+  await page.reload();
+  await expect(page.getByRole("heading", { name: "내 학교를 알려주세요" })).toBeVisible();
+  expect(pageErrors).toEqual([]);
 });
 
 test("vocational schools keep same-number classes separated by department", async ({ page }) => {

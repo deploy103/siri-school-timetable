@@ -1,8 +1,9 @@
-import { defineConfig } from "@playwright/test";
+import { defineConfig, devices } from "@playwright/test";
 
 export default defineConfig({
   testDir: "./e2e",
   fullyParallel: true,
+  workers: 2,
   forbidOnly: true,
   retries: process.env.CI ? 2 : 0,
   reporter: "list",
@@ -11,6 +12,7 @@ export default defineConfig({
     trace: "retain-on-failure"
   },
   projects: [
+    { name: "iphone-webkit", use: { ...devices["iPhone 13"], browserName: "webkit" } },
     { name: "mobile-390", use: { browserName: "chromium", viewport: { width: 390, height: 844 } } },
     { name: "tablet-768", use: { browserName: "chromium", viewport: { width: 768, height: 1024 } } },
     { name: "desktop-1440", use: { browserName: "chromium", viewport: { width: 1440, height: 900 } } }
@@ -18,8 +20,8 @@ export default defineConfig({
   webServer: {
     command: "pnpm build && pnpm start --hostname 127.0.0.1",
     url: "http://127.0.0.1:3000/api/health",
-    reuseExistingServer: !process.env.CI,
+    reuseExistingServer: false,
     timeout: 120_000,
-    env: { ...process.env, NEIS_MOCK_MODE: "true" }
+    env: { ...process.env, NEIS_MOCK_MODE: "true", TRUST_PROXY_HEADERS: "true" }
   }
 });

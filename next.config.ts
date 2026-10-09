@@ -15,8 +15,7 @@ const securityHeaders = [
       "object-src 'none'",
       "base-uri 'self'",
       "frame-ancestors 'none'",
-      "form-action 'self'",
-      ...(isDevelopment ? [] : ["upgrade-insecure-requests"])
+      "form-action 'self'"
     ].join("; ")
   },
   { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
