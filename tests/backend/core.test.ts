@@ -96,6 +96,26 @@ describe("speech generation", () => {
     expect(timetableToSpeech({ ...base, lessons: [] })).toContain("오늘 등록된 시간표가 없습니다");
   });
 
+  it("summarizes explicit Saturday closure records without hiding lessons or elective uncertainty", () => {
+    expect(timetableToSpeech({
+      ...base,
+      lessons: [
+        { period: 3, subject: "토요휴업일" },
+        { period: 1, subject: " 토요휴업일 " },
+        { period: 2, subject: "토요휴업일" },
+      ],
+    })).toBe("오늘 시간표는 토요휴업일로 등록되어 있습니다.");
+    expect(timetableToSpeech({
+      ...base,
+      date: "2026-10-10",
+      lessons: [{ period: 2, subject: "수학" }, { period: 1, subject: "토요휴업일" }],
+    })).toBe("오늘 시간표는 1교시 토요휴업일, 2교시 수학입니다.");
+    expect(timetableToSpeech({
+      ...base,
+      lessons: [{ period: 1, subject: "토요휴업일", ambiguous: true }],
+    })).toBe("오늘 시간표는 1교시 선택 수업입니다.");
+  });
+
   it("reads a merged elective period without losing its guidance", () => {
     expect(
       timetableToSpeech({
