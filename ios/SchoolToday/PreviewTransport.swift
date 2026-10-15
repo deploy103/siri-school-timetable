@@ -4,6 +4,7 @@ import Foundation
 /// Deterministic native UI-test data. This code is excluded from Release builds.
 final class PreviewTransport: URLProtocol {
     private static var failedVoice = false
+    private static var returnedEmptyClasses = false
     static var session: URLSession {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [PreviewTransport.self]
@@ -16,9 +17,9 @@ final class PreviewTransport: URLProtocol {
         day.locale = Locale(identifier: "en_US_POSIX")
         day.timeZone = TimeZone(identifier: "Asia/Seoul")
         day.dateFormat = "yyyy-MM-dd"
-        let date = day.string(from: Date())
         let path = request.url!.path
         let arguments = ProcessInfo.processInfo.arguments
+        let date = arguments.contains("--wrong-day") ? "2000-01-01" : day.string(from: Date())
         if path.hasPrefix("/api/voice/"), arguments.contains("--fail-first-voice"), !Self.failedVoice {
             Self.failedVoice = true
             client?.urlProtocol(self, didFailWithError: URLError(.timedOut))
@@ -34,9 +35,20 @@ final class PreviewTransport: URLProtocol {
             }
             body = #"{"status":"ok","neis":{"mode":"mock"}}"#
         case "/api/schools":
-            body = #"{"schools":[{"officeCode":"B10","schoolCode":"7010911","name":"테스트고등학교","kind":"고등학교","address":"서울특별시 마포구","region":"서울"}]}"#
+            let kind = arguments.contains("--middle-school") ? "중학교" : "고등학교"
+            let name = arguments.contains("--middle-school") ? "테스트중학교" : "테스트고등학교"
+            body = "{\"schools\":[{\"officeCode\":\"B10\",\"schoolCode\":\"7010911\",\"name\":\"\(name)\",\"kind\":\"\(kind)\",\"address\":\"서울특별시 마포구\",\"region\":\"서울\"}]}"
         case "/api/classes":
-            body = #"{"classes":[{"grade":2,"className":"3","department":"콘텐츠과"},{"grade":2,"className":"3","department":"클라우드보안과"}]}"#
+            if arguments.contains("--empty-first-classes"), !Self.returnedEmptyClasses {
+                Self.returnedEmptyClasses = true
+                body = #"{"classes":[]}"#
+            } else if arguments.contains("--middle-school") {
+                body = #"{"classes":[{"grade":1,"className":"2"},{"grade":2,"className":"3"},{"grade":2,"className":"7"}]}"#
+            } else if arguments.contains("--general-school") {
+                body = #"{"classes":[{"grade":1,"className":"2","department":"7차일반"},{"grade":2,"className":"3","department":"7차일반"},{"grade":2,"className":"7","department":"7차일반"}]}"#
+            } else {
+                body = #"{"classes":[{"grade":2,"className":"3","department":"콘텐츠과"},{"grade":2,"className":"3","department":"클라우드보안과"}]}"#
+            }
         case "/api/timetable/today":
             if arguments.contains("--fail-timetable") {
                 status = 503
@@ -47,7 +59,7 @@ final class PreviewTransport: URLProtocol {
                 body = "{\"date\":\"\(date)\",\"lessons\":[{\"period\":3,\"subject\":\"생명과학\"},{\"period\":1,\"subject\":\"수학\"}]}"
             }
         case "/api/meal/today":
-            body = "{\"date\":\"\(date)\",\"meals\":[{\"code\":\"2\",\"name\":\"중식\",\"dishes\":[\"쌀밥\",\"계란국 (1)\"],\"calories\":\"701 Kcal\"}]}"
+            body = "{\"date\":\"\(date)\",\"meals\":[{\"code\":\"2\",\"name\":\"중식\",\"dishes\":[\"쌀밥\",\"계란국 (1)\"],\"calories\":\"701 Kcal\",\"nutrition\":\"단백질: 25g\",\"origin\":\"쌀: 국내산\"}]}"
         case "/api/voice/timetable": body = "오늘 시간표는 1교시 수학, 3교시 생명과학입니다."
         case "/api/voice/meal": body = "오늘 급식은 쌀밥, 계란국입니다."
         default:
@@ -55,7 +67,9 @@ final class PreviewTransport: URLProtocol {
             body = #"{"error":{"message":"지원하지 않는 시험 경로입니다."}}"#
         }
         let contentType = path.hasPrefix("/api/voice/") ? "text/plain; charset=utf-8" : "application/json"
-        let response = HTTPURLResponse(url: request.url!, statusCode: status, httpVersion: nil, headerFields: ["Content-Type": contentType])!
+        var headers = ["Content-Type": contentType]
+        if path.hasPrefix("/api/voice/"), status == 200 { headers["X-School-Data-Mode"] = "mock" }
+        let response = HTTPURLResponse(url: request.url!, statusCode: status, httpVersion: nil, headerFields: headers)!
         client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
         client?.urlProtocol(self, didLoad: Data(body.utf8))
         client?.urlProtocolDidFinishLoading(self)

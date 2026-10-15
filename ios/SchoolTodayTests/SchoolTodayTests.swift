@@ -16,6 +16,10 @@ final class SchoolTodayTests: XCTestCase {
         let api = try SchoolAPI(server: "https://example.com:8443/")
         XCTAssertEqual(api.baseURL.host, "example.com")
         XCTAssertEqual(api.baseURL.port, 8443)
+        let canonical = try SchoolAPI(server: "https://example.com").baseURL
+        for equivalent in ["https://example.com/", "https://EXAMPLE.COM", "https://example.com:443/"] {
+            XCTAssertEqual(try SchoolAPI(server: equivalent).baseURL, canonical, equivalent)
+        }
     }
 
     func testDepartmentAndNonNumericClassRoundTripWithoutQueryInjection() throws {
@@ -33,16 +37,74 @@ final class SchoolTodayTests: XCTestCase {
         XCTAssertNotEqual(other.id, settings.schoolClass.id)
     }
 
+    func testPersonalShortcutURLsKeepNamesAsOneParameterWithoutClipboardInput() throws {
+        for name in ["학교 시간표", "점심 & 급식 + 간식?#", "시간표&input=clipboard&name=다른단축어", "🔔 학교/시간표 % 점심"] {
+            let url = SchoolShortcut.runURL(named: name)
+            let parts = try XCTUnwrap(URLComponents(url: url, resolvingAgainstBaseURL: false))
+            XCTAssertEqual(parts.scheme, "shortcuts")
+            XCTAssertEqual(parts.host, "run-shortcut")
+            XCTAssertEqual(parts.queryItems, [URLQueryItem(name: "name", value: name)])
+            XCTAssertNil(parts.fragment)
+            if name.contains("+") { XCTAssertTrue(url.absoluteString.contains("%2B")) }
+        }
+    }
+
     func testPreferencesPersistTheCompleteSelectionAndReset() throws {
         let suite = "SchoolTodayTests.\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
         defer { defaults.removePersistentDomain(forName: suite) }
+        XCTAssertEqual(SchoolPreferences.shortcutName(for: .timetable, defaults: defaults), "오늘의 학교 시간표 알려줘")
+        XCTAssertEqual(SchoolPreferences.shortcutName(for: .meal, defaults: defaults), "오늘의 학교 급식 알려줘")
+        SchoolPreferences.writeShortcutName("학교 시간표", for: .timetable, defaults: defaults)
+        SchoolPreferences.writeShortcutName("점심 뭐야", for: .meal, defaults: defaults)
+        XCTAssertEqual(SchoolPreferences.shortcutName(for: .timetable, defaults: defaults), "학교 시간표")
+        XCTAssertEqual(SchoolPreferences.shortcutName(for: .meal, defaults: defaults), "점심 뭐야")
         try SchoolPreferences.writeSchool(settings, defaults: defaults)
         XCTAssertEqual(SchoolPreferences.readSchool(defaults: defaults), settings)
         try SchoolPreferences.writeSchool(nil, defaults: defaults)
         XCTAssertNil(SchoolPreferences.readSchool(defaults: defaults))
         defaults.set(Data("not JSON".utf8), forKey: SchoolPreferences.schoolKey)
         XCTAssertNil(SchoolPreferences.readSchool(defaults: defaults))
+    }
+
+    func testSchoolTypePreservesLegacySelectionAndBackendDepartmentIdentity() throws {
+        let legacy = Data(#"{"school":{"officeCode":"B10","schoolCode":"7010911","name":"테스트고등학교","kind":"고등학교","address":"서울","region":"서울"},"schoolClass":{"grade":2,"className":"7","department":"7차일반"}}"#.utf8)
+        let previous = try JSONDecoder().decode(SchoolSettings.self, from: legacy)
+        XCTAssertNil(previous.highSchoolType)
+        XCTAssertEqual(previous.schoolClass.department, "7차일반")
+        let general = SchoolSettings(school: previous.school, schoolClass: previous.schoolClass, highSchoolType: .general)
+        XCTAssertEqual(general.classLabel, "2학년 7반")
+        XCTAssertEqual(general.timetableQuery.first { $0.name == "department" }?.value, "7차일반")
+        let decoded = try JSONDecoder().decode(SchoolSettings.self, from: JSONEncoder().encode(general))
+        XCTAssertEqual(decoded, general)
+        let vocational = SchoolSettings(school: settings.school, schoolClass: settings.schoolClass, highSchoolType: .vocational)
+        XCTAssertEqual(vocational.classLabel, "콘텐츠 & 보안과 · 2학년 3+과정반")
+    }
+
+    @MainActor
+    func testMissingOrUnreadableSchoolCannotSkipSetupAfterRelaunch() async throws {
+        let suite = "SchoolTodayTests.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        for data: Data? in [nil, Data("not JSON".utf8), Data("{}".utf8)] {
+            if let data { defaults.set(data, forKey: SchoolPreferences.schoolKey) }
+            else { defaults.removeObject(forKey: SchoolPreferences.schoolKey) }
+            defaults.set(true, forKey: "schooltoday.onboarding.v2")
+            SchoolPreferences.writeShortcutName("학교 시간표", for: .timetable, defaults: defaults)
+
+            let store = SchoolStore(defaults: defaults)
+            XCTAssertNil(store.school)
+            XCTAssertFalse(store.onboardingComplete)
+            try store.saveSchool(settings)
+            let relaunched = SchoolStore(defaults: defaults)
+            XCTAssertEqual(relaunched.school, settings)
+            XCTAssertFalse(relaunched.onboardingComplete)
+            XCTAssertEqual(SchoolPreferences.shortcutName(for: .timetable, defaults: defaults), "학교 시간표")
+        }
+        defaults.set(true, forKey: "schooltoday.onboarding.v2")
+        let completed = SchoolStore(defaults: defaults)
+        XCTAssertEqual(completed.school, settings)
+        XCTAssertTrue(completed.onboardingComplete)
     }
 
     func testAPIContractsAndAudibleMockDisclosure() async throws {
@@ -56,12 +118,38 @@ final class SchoolTodayTests: XCTestCase {
         XCTAssertEqual(timetable.lessons.map(\.period), [3, 1])
         let meals = try await api.meals(settings: settings)
         XCTAssertEqual(meals.meals.first?.dishes, ["쌀밥", "계란국 (1)"])
+        XCTAssertEqual(meals.meals.first?.nutrition, "단백질: 25g")
+        XCTAssertEqual(meals.meals.first?.origin, "쌀: 국내산")
         let speech = try await api.speech(settings: settings, meal: false)
         XCTAssertTrue(speech.hasPrefix("실제 학교 자료가 아닌 예제 데이터입니다. "))
         XCTAssertTrue(speech.contains("1교시 수학"))
     }
 
-    func testAppIntentsReturnReusableSetupGuidanceWhenSchoolIsMissing() async throws {
+    func testMealAllergenAnnotationsAreDecodedWithoutGuessingFromDishNames() {
+        XCTAssertEqual(MealAllergens.description(for: "계란국 (1)"), "난류")
+        XCTAssertEqual(MealAllergens.description(for: "파스타 ( 6.2.6.18.19. )"), "우유 · 밀 · 조개류(굴·전복·홍합 포함) · 잣")
+        XCTAssertEqual(MealAllergens.description(for: "볶음밥1.5.10."), "난류 · 대두 · 돼지고기")
+        XCTAssertEqual(MealAllergens.description(for: "면 (1\n.\t6)"), "난류 · 밀")
+        XCTAssertEqual(MealAllergens.description(for: "반찬 (0.1.20)"), "난류")
+        for dish in ["쌀밥", "비타민 B12", "3.14 파이", "우유 200ml", "주스 (100ml)", "빵 (20)", "2.5"] {
+            XCTAssertNil(MealAllergens.description(for: dish), dish)
+        }
+    }
+
+    func testShareSummariesPreserveMealAnnotationsAndOrderLessonsAndMeals() throws {
+        let timetable = try JSONDecoder().decode(Timetable.self, from: Data(#"{"date":"2026-10-10","lessons":[{"period":5,"subject":"체육"},{"period":2,"subject":"미술 또는 음악","ambiguous":true},{"period":3,"subject":"영어"}]}"#.utf8))
+        XCTAssertEqual(timetable.missingPeriods, [1, 4])
+        XCTAssertEqual(timetable.summary, "2교시 미술 또는 음악 (선택 수업)\n3교시 영어\n5교시 체육")
+        let meals = try JSONDecoder().decode(Meals.self, from: Data(#"{"date":"2026-10-10","meals":[{"code":"3","name":"석식","dishes":["볶음밥 (1.5.10)"],"calories":""},{"code":"1","name":"조식","dishes":["우유 (2)","빵 (1.6)"],"calories":""}]}"#.utf8))
+        XCTAssertEqual(meals.summary, "[조식]\n우유 (2)\n빵 (1.6)\n\n[석식]\n볶음밥 (1.5.10)")
+        XCTAssertNil(meals.meals.first?.nutrition)
+        XCTAssertNil(meals.meals.first?.origin)
+        XCTAssertEqual(Timetable(date: "2026-10-10", lessons: []).missingPeriods, [])
+        XCTAssertEqual(Timetable(date: "2026-10-10", lessons: []).summary, "등록된 시간표가 없습니다.")
+        XCTAssertEqual(Meals(date: "2026-10-10", meals: []).summary, "등록된 급식이 없습니다.")
+    }
+
+    func testAppIntentsFailWithSetupGuidanceWhenSchoolIsMissing() async throws {
         let defaults = UserDefaults.standard
         let original = defaults.data(forKey: SchoolPreferences.schoolKey)
         defer {
@@ -69,10 +157,78 @@ final class SchoolTodayTests: XCTestCase {
             else { defaults.removeObject(forKey: SchoolPreferences.schoolKey) }
         }
         defaults.removeObject(forKey: SchoolPreferences.schoolKey)
-        let timetable = try await TodayTimetableIntent().perform()
-        let meal = try await TodayMealIntent().perform()
-        XCTAssertEqual(timetable.value, "오늘의 학교 앱에서 학교와 학급을 먼저 설정해 주세요.")
-        XCTAssertEqual(meal.value, "오늘의 학교 앱에서 학교와 학급을 먼저 설정해 주세요.")
+        for meal in [false, true] {
+            do {
+                if meal { _ = try await TodayMealIntent().perform() }
+                else { _ = try await TodayTimetableIntent().perform() }
+                XCTFail("Missing school must not become a successful Shortcuts value")
+            } catch let error as SchoolError {
+                XCTAssertEqual(error.localizedDescription, "오늘의 학교 앱에서 학교와 학급을 먼저 설정해 주세요.")
+                XCTAssertEqual(String(localized: error.localizedStringResource), error.localizedDescription)
+            }
+        }
+    }
+
+    func testSpeechProvenanceSupportsNewAndLegacyServers() async throws {
+        let api = try SchoolAPI(server: "https://controlled.invalid", session: ControlledTransport.session)
+        defer { ControlledTransport.onStart = nil }
+        for meal in [false, true] {
+            let speech = meal ? "오늘 등록된 급식이 없습니다." : "오늘 시간표는 2교시 영어입니다."
+            for mode in ["live", "mock"] {
+                for legacy in [false, true] {
+                    ControlledTransport.onStart = { transport in
+                        if transport.request.url?.path == "/api/health" {
+                            if legacy {
+                                transport.respond(body: Data("{\"neis\":{\"mode\":\"\(mode)\"}}".utf8), contentType: "application/json")
+                            } else {
+                                // A failed health endpoint must not block a valid modern response.
+                                transport.fail(.notConnectedToInternet)
+                            }
+                        } else {
+                            let path = meal ? "/api/voice/meal" : "/api/voice/timetable"
+                            XCTAssertEqual(transport.request.url?.path, path)
+                            transport.respond(body: Data(speech.utf8), mode: legacy ? nil : mode)
+                        }
+                    }
+                    let result = try await api.speech(settings: settings, meal: meal)
+                    XCTAssertEqual(result, (mode == "mock" ? "실제 학교 자료가 아닌 예제 데이터입니다. " : "") + speech)
+                }
+            }
+        }
+    }
+
+    func testSpeechRejectsInvalidBodiesAndUnknownProvenanceAndPreservesServerErrors() async throws {
+        let api = try SchoolAPI(server: "https://controlled.invalid", session: ControlledTransport.session)
+        defer { ControlledTransport.onStart = nil }
+        let invalidResponse = "음성 안내를 읽을 수 없습니다. 잠시 뒤 다시 실행해 주세요."
+        let genericFailure = "학교 정보를 불러오지 못했습니다. 잠시 후 다시 시도해 주세요."
+        let cases: [(Data, String, String, Int, String)] = [
+            (Data("<html>Proxy error</html>".utf8), "text/html", "live", 200, invalidResponse),
+            (Data("{\"error\":\"upstream\"}".utf8), "application/json", "live", 200, invalidResponse),
+            (Data(" \n\t".utf8), "text/plain", "mock", 200, invalidResponse),
+            (Data([0xff]), "text/plain", "live", 200, invalidResponse),
+            (Data("오늘 등록된 급식이 없습니다.".utf8), "text/plain", "unconfigured", 200, "학교 자료의 출처를 확인하지 못했어요. 잠시 뒤 다시 실행해 주세요."),
+            (Data("<html>Proxy secret</html>".utf8), "text/html", "live", 502, genericFailure),
+            (Data(" \n".utf8), "text/plain", "live", 503, genericFailure),
+            (Data("요청이 너무 많습니다. 잠시 후 다시 물어봐 주세요.".utf8), "text/plain", "live", 429, "요청이 너무 많습니다. 잠시 후 다시 물어봐 주세요."),
+        ]
+        for meal in [false, true] {
+            for (body, type, mode, status, expected) in cases {
+                ControlledTransport.onStart = { transport in
+                    if transport.request.url?.path == "/api/health" {
+                        transport.respond(body: Data(#"{"neis":{"mode":"live"}}"#.utf8), contentType: "application/json")
+                    } else {
+                        transport.respond(body: body, contentType: type, mode: mode, status: status)
+                    }
+                }
+                do {
+                    _ = try await api.speech(settings: settings, meal: meal)
+                    XCTFail("Invalid voice response must not become spoken data")
+                } catch {
+                    XCTAssertEqual(error.localizedDescription, expected)
+                }
+            }
+        }
     }
 
     func testNetworkFailuresAreActionableAndCancellationIsPreserved() async throws {
@@ -94,6 +250,85 @@ final class SchoolTodayTests: XCTestCase {
         }
     }
 
+    func testMalformedJSONResponsesGiveRetryGuidanceAndAllowRecovery() async throws {
+        let api = try SchoolAPI(server: "https://controlled.invalid", session: ControlledTransport.session)
+        defer { ControlledTransport.onStart = nil }
+        let calls: [() async throws -> Void] = [
+            { _ = try await api.health() },
+            { _ = try await api.schools(name: "테스트") },
+            { _ = try await api.classes(school: self.settings.school) },
+            { _ = try await api.timetable(settings: self.settings) },
+            { _ = try await api.meals(settings: self.settings) },
+        ]
+        for body in [Data(), Data("<html>Proxy failure</html>".utf8), Data("{\"date\":".utf8), Data("{}".utf8), Data("[]".utf8), Data([0xff])] {
+            ControlledTransport.onStart = { $0.respond(body: body, contentType: "application/json") }
+            for call in calls {
+                do {
+                    try await call()
+                    XCTFail("Malformed data must not be accepted as school information")
+                } catch let error as SchoolError {
+                    XCTAssertEqual(error.localizedDescription, "학교 자료를 읽지 못했어요. 잠시 뒤 다시 시도해 주세요.")
+                } catch {
+                    XCTFail("Expected retry guidance, not a raw decoding error: \(error)")
+                }
+            }
+        }
+        ControlledTransport.onStart = {
+            $0.respond(body: Data(#"{"error":{"message":"학교 서비스 점검 중입니다."}}"#.utf8), contentType: "application/json", status: 503)
+        }
+        for call in calls {
+            do { try await call(); XCTFail("Expected the server failure") }
+            catch { XCTAssertEqual(error.localizedDescription, "학교 서비스 점검 중입니다.") }
+        }
+        ControlledTransport.onStart = { transport in
+            let body: String
+            switch transport.request.url?.path {
+            case "/api/health": body = #"{"neis":{"mode":"live"}}"#
+            case "/api/schools": body = #"{"schools":[]}"#
+            case "/api/classes": body = #"{"classes":[]}"#
+            case "/api/timetable/today": body = #"{"date":"2026-10-15","lessons":[]}"#
+            default: body = #"{"date":"2026-10-15","meals":[]}"#
+            }
+            transport.respond(body: Data(body.utf8), contentType: "application/json")
+        }
+        let health = try await api.health()
+        let schools = try await api.schools(name: "테스트")
+        let classes = try await api.classes(school: settings.school)
+        let timetable = try await api.timetable(settings: settings)
+        let meals = try await api.meals(settings: settings)
+        XCTAssertEqual(health.neis.mode, "live")
+        XCTAssertTrue(schools.isEmpty)
+        XCTAssertTrue(classes.isEmpty)
+        XCTAssertTrue(timetable.lessons.isEmpty)
+        XCTAssertTrue(meals.meals.isEmpty)
+    }
+
+    func testTimetableRejectsInvalidPeriodsAndDuplicateRows() async throws {
+        let api = try SchoolAPI(server: "https://controlled.invalid", session: ControlledTransport.session)
+        defer { ControlledTransport.onStart = nil }
+        let invalidLessons = [0, -1, 21, Int.max].map {
+            "[{\"period\":\($0),\"subject\":\"수학\"}]"
+        } + [#"[{"period":2,"subject":"국어"},{"period":2,"subject":"수학"}]"#]
+        for lessons in invalidLessons {
+            ControlledTransport.onStart = {
+                $0.respond(body: Data("{\"date\":\"2026-10-15\",\"lessons\":\(lessons)}".utf8), contentType: "application/json")
+            }
+            do {
+                _ = try await api.timetable(settings: settings)
+                XCTFail("Invalid periods or duplicate rows must not reach the timetable screen")
+            } catch let error as SchoolError {
+                XCTAssertEqual(error.localizedDescription, "시간표 자료가 올바르지 않아요. 잠시 뒤 다시 시도해 주세요.")
+            }
+        }
+        ControlledTransport.onStart = {
+            $0.respond(body: Data(#"{"date":"2026-10-15","lessons":[{"period":20,"subject":"자율활동"},{"period":1,"subject":"미술 또는 음악","ambiguous":true}]}"#.utf8), contentType: "application/json")
+        }
+        let valid = try await api.timetable(settings: settings)
+        XCTAssertEqual(Set(valid.lessons.map(\.period)), [1, 20])
+        XCTAssertEqual(valid.missingPeriods, Array(2..<20))
+        XCTAssertEqual(valid.lessons.first { $0.period == 1 }?.ambiguous, true)
+    }
+
     @MainActor
     func testKoreanMidnightAndClearingYesterday() async throws {
         let before = ISO8601DateFormatter().date(from: "2026-10-08T14:59:59Z")!
@@ -104,9 +339,11 @@ final class SchoolTodayTests: XCTestCase {
         let api = try SchoolAPI(server: "https://fixture.invalid", session: PreviewTransport.session)
         await model.load(kind: .timetable, settings: settings, api: api)
         XCTAssertEqual(model.timetable?.lessons.count, 2)
+        XCTAssertNotNil(model.fetchedAt)
         model.clearYesterday()
         XCTAssertNil(model.timetable)
         XCTAssertNil(model.meals)
+        XCTAssertNil(model.fetchedAt)
         XCTAssertFalse(model.loading)
         XCTAssertEqual(model.error, "인터넷 연결을 확인한 뒤 다시 시도해 주세요.")
     }
@@ -121,6 +358,26 @@ final class SchoolTodayTests: XCTestCase {
         try store.saveSchool(settings)
         try await store.connect()
         XCTAssertEqual(store.school, settings)
+        for previous in ["https://fixture.invalid/", "https://FIXTURE.INVALID", "https://fixture.invalid:443/"] {
+            try store.saveSchool(settings)
+            store.finishOnboarding()
+            defaults.set(previous, forKey: SchoolPreferences.serverKey)
+            let relaunched = SchoolStore(defaults: defaults, session: PreviewTransport.session, server: "https://fixture.invalid")
+            try await relaunched.connect()
+            XCTAssertEqual(relaunched.school, settings, previous)
+            XCTAssertTrue(relaunched.onboardingComplete, previous)
+            XCTAssertEqual(SchoolPreferences.readSchool(defaults: defaults), settings, previous)
+        }
+        let previousServer = defaults.string(forKey: SchoolPreferences.serverKey)
+        ControlledTransport.onStart = { $0.fail(.notConnectedToInternet) }
+        defer { ControlledTransport.onStart = nil }
+        let unavailable = SchoolStore(defaults: defaults, session: ControlledTransport.session, server: "https://controlled.invalid")
+        do { try await unavailable.connect(); XCTFail("Expected connection failure") }
+        catch { XCTAssertTrue(error.localizedDescription.contains("인터넷 연결")) }
+        XCTAssertEqual(unavailable.school, settings)
+        XCTAssertTrue(unavailable.onboardingComplete)
+        XCTAssertEqual(SchoolPreferences.readSchool(defaults: defaults), settings)
+        XCTAssertEqual(defaults.string(forKey: SchoolPreferences.serverKey), previousServer)
         let updated = SchoolStore(defaults: defaults, session: PreviewTransport.session, server: "https://fixture.invalid:8443")
         try await updated.connect()
         XCTAssertNil(updated.school)
@@ -132,6 +389,84 @@ final class SchoolTodayTests: XCTestCase {
         XCTAssertNil(SchoolPreferences.readSchool(defaults: defaults))
         XCTAssertEqual(updated.server, "https://fixture.invalid:8443")
         XCTAssertEqual(SchoolStore(defaults: defaults).server, SchoolPreferences.server())
+    }
+
+    @MainActor
+    func testWrongDayResultsAndRefreshFailuresCannotLookLikeCurrentData() async throws {
+        let api = try SchoolAPI(server: "https://controlled.invalid", session: ControlledTransport.session)
+        defer { ControlledTransport.onStart = nil }
+        for kind in [TodayKind.timetable, .meals] {
+            let model = TodayModel()
+            ControlledTransport.onStart = { $0.finish(subject: "current") }
+            await model.load(kind: kind, settings: settings, api: api)
+            XCTAssertNotNil(model.fetchedAt)
+            XCTAssertNil(model.error)
+            let shared = try XCTUnwrap(model.shareText(settings: settings, mock: true))
+            XCTAssertTrue(shared.hasPrefix("예제 데이터 · 실제 학교 자료가 아닙니다\n테스트고등학교\n콘텐츠 & 보안과 · 2학년 3+과정반\n"))
+            XCTAssertTrue(shared.contains("current"))
+            XCTAssertTrue(shared.hasSuffix("출처: NEIS · 오늘의 학교"))
+            XCTAssertFalse(model.shareText(settings: settings, mock: false)?.contains("예제 데이터") == true)
+            ControlledTransport.onStart = {
+                $0.respond(body: Data("{}".utf8), contentType: "application/json")
+            }
+            await model.load(kind: kind, settings: settings, api: api)
+            XCTAssertEqual(model.error, "학교 자료를 읽지 못했어요. 잠시 뒤 다시 시도해 주세요.")
+            XCTAssertNil(model.timetable)
+            XCTAssertNil(model.meals)
+            XCTAssertNil(model.fetchedAt)
+            XCTAssertFalse(model.loading)
+            XCTAssertNil(model.shareText(settings: settings, mock: false))
+            ControlledTransport.onStart = { $0.finish(subject: "recovered") }
+            await model.load(kind: kind, settings: settings, api: api)
+            XCTAssertNil(model.error)
+            XCTAssertTrue(model.shareText(settings: settings, mock: false)?.contains("recovered") == true)
+            ControlledTransport.onStart = { $0.finish(subject: "wrong day", date: "2000-01-01") }
+            await model.load(kind: kind, settings: settings, api: api)
+            XCTAssertTrue(model.error?.contains("오늘 날짜") == true)
+            XCTAssertNil(model.timetable)
+            XCTAssertNil(model.meals)
+            XCTAssertNil(model.fetchedAt)
+            XCTAssertFalse(model.loading)
+            XCTAssertNil(model.shareText(settings: settings, mock: false))
+            ControlledTransport.onStart = { $0.finish(subject: "current") }
+            await model.load(kind: kind, settings: settings, api: api)
+            XCTAssertNotNil(model.fetchedAt)
+            ControlledTransport.onStart = { $0.fail(.notConnectedToInternet) }
+            await model.load(kind: kind, settings: settings, api: api)
+            XCTAssertNotNil(model.error)
+            XCTAssertNil(model.timetable)
+            XCTAssertNil(model.meals)
+            XCTAssertNil(model.fetchedAt)
+            XCTAssertNil(model.shareText(settings: settings, mock: false))
+        }
+    }
+
+    @MainActor
+    func testCancelledLookupStopsLoadingAndCanBeRetriedWithoutStaleData() async throws {
+        let api = try SchoolAPI(server: "https://controlled.invalid", session: ControlledTransport.session)
+        defer { ControlledTransport.onStart = nil }
+        for kind in [TodayKind.timetable, .meals] {
+            let model = TodayModel()
+            let started = expectation(description: "lookup started")
+            ControlledTransport.onStart = { _ in started.fulfill() }
+            let lookup = Task { await model.load(kind: kind, settings: settings, api: api) }
+            await fulfillment(of: [started], timeout: 3)
+            XCTAssertTrue(model.loading)
+            lookup.cancel()
+            await lookup.value
+            XCTAssertFalse(model.loading)
+            XCTAssertNil(model.error)
+            XCTAssertNil(model.timetable)
+            XCTAssertNil(model.meals)
+            XCTAssertNil(model.fetchedAt)
+            XCTAssertNil(model.shareText(settings: settings, mock: false))
+            ControlledTransport.onStart = { $0.finish(subject: "retry result") }
+            await model.load(kind: kind, settings: settings, api: api)
+            XCTAssertFalse(model.loading)
+            XCTAssertNil(model.error)
+            XCTAssertNotNil(model.fetchedAt)
+            XCTAssertTrue(model.shareText(settings: settings, mock: false)?.contains("retry result") == true)
+        }
     }
 
     @MainActor
@@ -166,6 +501,7 @@ final class SchoolTodayTests: XCTestCase {
                     XCTAssertTrue(model.loading)
                     XCTAssertNil(model.timetable)
                     XCTAssertNil(model.error)
+                    XCTAssertNil(model.shareText(settings: settings, mock: false))
                 }
                 requests[1].finish(subject: "newer")
                 await second.value
@@ -195,13 +531,28 @@ private final class ControlledTransport: URLProtocol {
     func fail(_ code: URLError.Code) {
         client?.urlProtocol(self, didFailWithError: URLError(code))
     }
-    func finish(subject: String, status: Int = 200) {
-        let body = status == 200
-            ? "{\"date\":\"2026-10-08\",\"lessons\":[{\"period\":1,\"subject\":\"\(subject)\"}]}"
-            : "{\"error\":{\"message\":\"older request failed\"}}"
-        let response = HTTPURLResponse(url: request.url!, statusCode: status, httpVersion: nil, headerFields: ["Content-Type": "application/json"])!
+    func finish(subject: String, status: Int = 200, date: String? = nil) {
+        let formatter = DateFormatter()
+        formatter.timeZone = TimeZone(identifier: "Asia/Seoul")
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = "yyyy-MM-dd"
+        let day = date ?? formatter.string(from: Date())
+        let body: String
+        if status != 200 {
+            body = #"{"error":{"message":"older request failed"}}"#
+        } else if request.url?.path == "/api/meal/today" {
+            body = "{\"date\":\"\(day)\",\"meals\":[{\"code\":\"2\",\"name\":\"중식\",\"dishes\":[\"\(subject)\"],\"calories\":\"\"}]}"
+        } else {
+            body = "{\"date\":\"\(day)\",\"lessons\":[{\"period\":1,\"subject\":\"\(subject)\"}]}"
+        }
+        respond(body: Data(body.utf8), contentType: "application/json", status: status)
+    }
+    func respond(body: Data, contentType: String = "text/plain; charset=utf-8", mode: String? = nil, status: Int = 200) {
+        var headers = ["Content-Type": contentType]
+        if let mode { headers["X-School-Data-Mode"] = mode }
+        let response = HTTPURLResponse(url: request.url!, statusCode: status, httpVersion: nil, headerFields: headers)!
         client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
-        client?.urlProtocol(self, didLoad: Data(body.utf8))
+        client?.urlProtocol(self, didLoad: body)
         client?.urlProtocolDidFinishLoading(self)
     }
 }
