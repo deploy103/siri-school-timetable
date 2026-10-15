@@ -194,7 +194,18 @@ describe("meal routes", () => {
     const routeResponse = await mealVoiceRoute(request("/api/voice/meal?officeCode=B10&schoolCode=7010911"));
     expect(routeResponse.status).toBe(200);
     expect(routeResponse.headers.get("content-type")).toBe("text/plain; charset=utf-8");
+    expect(routeResponse.headers.get("x-school-data-mode")).toBe("live");
     expect(await routeResponse.text()).toBe("오늘 급식은 쌀밥, 미역국, 제육볶음, 배추김치입니다.");
+  });
+
+  it("identifies example meal speech without changing legacy plain-text output", async () => {
+    vi.stubEnv("NEIS_MOCK_MODE", "true");
+    const routeResponse = await mealVoiceRoute(request("/api/voice/meal?officeCode=B10&schoolCode=7010911"));
+    expect(routeResponse.status).toBe(200);
+    expect(routeResponse.headers.get("x-school-data-mode")).toBe("mock");
+    expect(routeResponse.headers.get("cache-control")).toBe("no-store");
+    expect(routeResponse.headers.get("x-content-type-options")).toBe("nosniff");
+    expect(await routeResponse.text()).toMatch(/^오늘 급식은 /);
   });
 
   it("rejects invalid school codes before calling NEIS", async () => {

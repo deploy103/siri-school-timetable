@@ -348,7 +348,18 @@ describe("API routes", () => {
     const response = await voiceRoute(request(`/api/voice/timetable?${validQuery}`, "127.0.0.2"));
     expect(response.status).toBe(200);
     expect(response.headers.get("content-type")).toBe("text/plain; charset=utf-8");
+    expect(response.headers.get("x-school-data-mode")).toBe("live");
     expect(await response.text()).toBe("오늘 시간표는 1교시 자료구조입니다.");
+  });
+
+  it("identifies example voice data without changing legacy plain-text output", async () => {
+    vi.stubEnv("NEIS_MOCK_MODE", "true");
+    const response = await voiceRoute(request(`/api/voice/timetable?${validQuery}`));
+    expect(response.status).toBe(200);
+    expect(response.headers.get("x-school-data-mode")).toBe("mock");
+    expect(response.headers.get("cache-control")).toBe("no-store");
+    expect(response.headers.get("x-content-type-options")).toBe("nosniff");
+    expect(await response.text()).toMatch(/^오늘 시간표는 1교시 /);
   });
 
   it("returns a natural plain-text error for an invalid voice URL", async () => {
@@ -356,6 +367,7 @@ describe("API routes", () => {
     const response = await voiceRoute(request("/api/voice/timetable?officeCode=bad%2Furl", "127.0.0.3"));
     expect(response.status).toBe(400);
     expect(response.headers.get("content-type")).toBe("text/plain; charset=utf-8");
+    expect(response.headers.get("x-school-data-mode")).toBeNull();
     expect(await response.text()).toContain("학교 설정이 올바르지 않습니다");
   });
 
