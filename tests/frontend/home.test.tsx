@@ -47,7 +47,7 @@ describe("HomePage", () => {
     expect(lessons[1]).toHaveTextContent("2교시영어");
     expect(fetchMock).toHaveBeenCalledWith(
       "/api/timetable/today?officeCode=B10&schoolCode=7011234&kind=%EC%A4%91%ED%95%99%EA%B5%90&grade=2&className=3",
-      { cache: "no-store" },
+      { cache: "no-store", signal: expect.any(AbortSignal) },
     );
   });
 
@@ -94,7 +94,7 @@ describe("HomePage", () => {
     expect(await screen.findByRole("heading", { name: "중식" })).toBeVisible();
     expect(fetchMock).toHaveBeenCalledWith(
       "/api/meal/today?officeCode=B10&schoolCode=7011234",
-      { cache: "no-store" },
+      { cache: "no-store", signal: expect.any(AbortSignal) },
     );
     expect(JSON.parse(window.localStorage.getItem(STORAGE_KEY) ?? "null")).toEqual(settings);
   });
