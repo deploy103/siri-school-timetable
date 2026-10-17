@@ -47,5 +47,16 @@ if [[ -d "$run/SchoolToday.xcresult" ]]; then
   xcrun xcresulttool export attachments --path "$run/SchoolToday.xcresult" \
     --output-path "$run/screenshots" || echo "화면 내보내기에 실패했습니다. xcresult를 Xcode에서 열어 주세요." >&2
 fi
+if [[ "$status" -eq 0 ]]; then
+  set +e
+  xcodebuild -project "$root/ios/SchoolToday.xcodeproj" -scheme SchoolToday-LocalStoreKit \
+    -configuration Debug -destination "platform=iOS Simulator,id=$device_id" \
+    -destination-timeout 120 -derivedDataPath "$run/DerivedData" \
+    -parallel-testing-enabled NO \
+    -resultBundlePath "$run/PlusStoreKit.xcresult" CODE_SIGNING_ALLOWED=NO test \
+    2>&1 | tee "$run/storekit.log"
+  status=${PIPESTATUS[0]}
+  set -e
+fi
 echo "빌드·테스트 로그와 xcresult: $run"
 exit "$status"

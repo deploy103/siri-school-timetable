@@ -9,6 +9,163 @@ final class SchoolTodayTests: XCTestCase {
         )
     }
 
+    func testV1ArchiveMigrationPreservesIdentityAndCompletion() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let fixture = #"{"version":1,"rules":[{"id":"11111111-1111-1111-1111-111111111111","selection":"class-a","subject":"미술","items":["붓"],"enabled":true}],"tasks":[{"id":"22222222-2222-2222-2222-222222222222","selection":"class-a","title":"동의서","date":"2026-10-19","subject":"","kind":"item"}],"completed":["rule:11111111-1111-1111-1111-111111111111:2026-10-19:붓","task:22222222-2222-2222-2222-222222222222"],"corrections":[]}"#
+        let url = directory.appendingPathComponent("preparation-v1.json")
+        try Data(fixture.utf8).write(to: url)
+        let archive = PlannerArchive(directory: directory)
+        let migrated = try archive.load()
+        XCTAssertEqual(migrated.version, 2)
+        XCTAssertEqual(migrated.rules.map(\.id.uuidString), ["11111111-1111-1111-1111-111111111111"])
+        XCTAssertEqual(migrated.tasks.map(\.id.uuidString), ["22222222-2222-2222-2222-222222222222"])
+        XCTAssertTrue(migrated.stages.isEmpty)
+        XCTAssertTrue(migrated.preferences.isEmpty)
+        let items = migrated.occurrences(on: "2026-10-19", selection: "class-a", lessons: [Timetable.Lesson(period: 1, subject: "미술", ambiguous: false)])
+        XCTAssertEqual(items.map(\.title), ["붓", "동의서"])
+        XCTAssertEqual(items.map(\.completed), [true, true])
+        XCTAssertEqual(try Data(contentsOf: url), Data(fixture.utf8), "Reading must not rewrite the v1 source")
+        try archive.save(migrated)
+        XCTAssertEqual(try archive.load(), migrated)
+    }
+
+    func testNoticesRespectExpiryDeduplicationAndStageCompletion() throws {
+        let now = try XCTUnwrap(ISO8601DateFormatter().date(from: "2026-10-18T00:00:00Z"))
+        let before = now.addingTimeInterval(60)
+        let expiry = now.addingTimeInterval(120)
+        let after = now.addingTimeInterval(180)
+        let task = PreparationTask(selection: "a", title: "보고서", date: "2026-10-19", kind: .deadline, reminder: after, extraReminders: [now, before, before, expiry, after])
+        let stage = PreparationStage(taskID: task.id, title: "초안", date: "2026-10-18", reminder: before)
+        let boundaryStage = PreparationStage(taskID: task.id, title: "제출", date: "2026-10-19", reminder: expiry)
+        let foreign = PreparationTask(selection: "b", title: "비공개 다른 반", date: "2026-10-19", reminder: before)
+        var plan = PreparationPlan(tasks: [task, foreign], stages: [stage, boundaryStage])
+        let basic = plan.notices(selection: "a", cache: nil, plus: false, after: now, plusUntil: expiry)
+        XCTAssertEqual(basic.map(\.body), ["보고서"])
+        XCTAssertEqual(basic.map(\.fireDate), [after], "The basic reminder survives premium expiry")
+        let premium = plan.notices(selection: "a", cache: nil, plus: true, after: now, plusUntil: expiry)
+        XCTAssertEqual(premium.map(\.fireDate), [before, before, after])
+        XCTAssertEqual(Set(premium.map(\.body)), ["보고서", "보고서 · 초안"])
+        XCTAssertEqual(Set(premium.map(\.id)).count, 3)
+        XCTAssertEqual(plan.notices(selection: "a", cache: nil, plus: true, after: now).map(\.fireDate), [before, before, expiry, expiry, after])
+        let occurrence = try XCTUnwrap(plan.occurrences(on: "2026-10-18", selection: "a", lessons: nil, includeStages: true).first)
+        plan.toggle(occurrence)
+        XCTAssertEqual(plan.notices(selection: "a", cache: nil, plus: true, after: now, plusUntil: expiry).map(\.body), ["보고서", "보고서"])
+        XCTAssertTrue(plan.occurrences(on: "2026-10-18", selection: "a", lessons: nil, includeStages: true)[0].completed)
+        let parent = try XCTUnwrap(plan.occurrences(on: "2026-10-19", selection: "a", lessons: nil).first)
+        plan.toggle(parent)
+        XCTAssertTrue(plan.notices(selection: "a", cache: nil, plus: true, after: now).isEmpty)
+        XCTAssertEqual(plan.occurrences(on: "2026-10-19", selection: "a", lessons: nil, includeStages: true).map(\.title), ["보고서"])
+    }
+
+    @MainActor
+    func testDowngradeRetainsRecordsAndPersistsChosenFreeRule() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let api = try SchoolAPI(server: "https://fixture.invalid", session: PreviewTransport.session)
+        let store = PlannerStore(settings: settings, api: api, mode: "mock", directory: directory)
+        store.updateAccess(true)
+        try store.addRule(subject: "미술", items: ["붓"])
+        try store.addRule(subject: "체육", items: ["운동화"])
+        let day = "2026-10-19"
+        try store.correct(LessonCorrection(selection: settings.planningKey, date: day, period: 1, subject: "미술", room: "101"))
+        try store.correct(LessonCorrection(selection: settings.planningKey, date: day, period: 2, subject: "체육", room: "운동장"))
+        let task = PreparationTask(selection: settings.planningKey, title: "개인 보고서", date: day, kind: .deadline)
+        try store.addTask(task, stages: [PreparationStage(taskID: task.id, title: "개인 초안", date: day)])
+        let art = try XCTUnwrap(store.occurrences(on: day).first { $0.title == "붓" })
+        store.toggle(art)
+        let original = store.plan
+        store.updateAccess(false)
+        XCTAssertEqual(store.plan, original)
+        XCTAssertEqual(store.occurrences(on: day).map(\.title), ["붓", "개인 보고서"])
+        XCTAssertTrue(store.occurrences(on: day)[0].completed)
+        var renamed = task
+        renamed.title = "수정한 개인 보고서"
+        try store.addTask(renamed, stages: original.stages)
+        XCTAssertEqual(store.tasks.first?.title, "수정한 개인 보고서", "Expiration must not prevent basic editing of retained records")
+        try store.addTask(task, stages: original.stages)
+        XCTAssertThrowsError(try store.addRule(subject: "음악", items: ["악보"]))
+        try store.useFreeRule(try XCTUnwrap(store.rules.first { $0.subject == "체육" }))
+        XCTAssertEqual(store.occurrences(on: day).map(\.title), ["운동화", "개인 보고서"])
+        let reopened = PlannerStore(settings: settings, api: api, mode: "mock", directory: directory)
+        XCTAssertEqual(reopened.occurrences(on: day).map(\.title), ["운동화", "개인 보고서"])
+        XCTAssertEqual(reopened.plan.tasks, original.tasks)
+        XCTAssertEqual(reopened.plan.stages, original.stages)
+        XCTAssertEqual(reopened.plan.completed, original.completed)
+        reopened.updateAccess(true)
+        XCTAssertEqual(reopened.occurrences(on: day).map(\.title), ["운동화", "붓", "개인 보고서", "개인 초안"])
+        XCTAssertEqual(reopened.occurrences(on: day).map(\.completed), [false, true, false, false])
+        let link = try XCTUnwrap(SchoolSelectionLink.url(settings))
+        XCTAssertEqual(try SchoolSelectionLink.read(link), settings)
+        let query = try XCTUnwrap(URLComponents(url: link, resolvingAgainstBaseURL: false)?.queryItems)
+        XCTAssertEqual(query.map(\.name), ["school"])
+        let payload = try XCTUnwrap(Data(base64Encoded: try XCTUnwrap(query.first?.value)))
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: payload) as? [String: Any])
+        XCTAssertEqual(Set(object.keys), ["school", "schoolClass"])
+        XCTAssertFalse(String(decoding: payload, as: UTF8.self).contains("개인"))
+        XCTAssertEqual(store.plan.tasks.count, 1, "Sharing must not remove local private records")
+    }
+
+    @MainActor
+    func testReplacePlanRejectsStaleAndInvalidInputAndBacksUpBeforeRestore() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let api = try SchoolAPI(server: "https://fixture.invalid", session: PreviewTransport.session)
+        let store = PlannerStore(settings: settings, api: api, mode: "mock", directory: directory)
+        let stale = store.plan
+        try store.addTask(PreparationTask(selection: settings.planningKey, title: "원본", date: "2026-10-19"))
+        let current = store.plan
+        let source = directory.appendingPathComponent("preparation-v1.json")
+        let bytes = try Data(contentsOf: source)
+        let replacement = PreparationPlan(tasks: [PreparationTask(selection: settings.planningKey, title: "복원본", date: "2026-10-20")])
+        XCTAssertThrowsError(try store.replacePlan(replacement, expected: stale))
+        var invalid = replacement
+        invalid.tasks[0].date = "2026-02-30"
+        XCTAssertThrowsError(try store.replacePlan(invalid, expected: current))
+        XCTAssertEqual(store.plan, current)
+        XCTAssertEqual(try Data(contentsOf: source), bytes)
+        XCTAssertFalse(try FileManager.default.contentsOfDirectory(atPath: directory.path).contains { $0.hasPrefix("before-restore-") })
+        try store.replacePlan(replacement, expected: current)
+        XCTAssertEqual(store.plan, replacement)
+        XCTAssertEqual(try PlannerArchive(directory: directory).load(), replacement)
+        let backups = try FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil).filter { $0.lastPathComponent.hasPrefix("before-restore-") }
+        XCTAssertEqual(backups.count, 1)
+        XCTAssertEqual(try Data(contentsOf: XCTUnwrap(backups.first)), bytes)
+    }
+
+    func testBellTimesRespectKoreanLessonBoundariesAndRejectOverlaps() throws {
+        let first = SchoolBellTime(period: 1, startMinute: 9 * 60, endMinute: 9 * 60 + 45)
+        let second = SchoolBellTime(period: 3, startMinute: 10 * 60 + 5, endMinute: 10 * 60 + 55)
+        let preference = PreparationPreference(selection: "a", bellTimes: [second, first])
+        let plan = PreparationPlan(preferences: [preference])
+        try plan.validate()
+        let timetable = Timetable(date: "2026-10-19", lessons: [.init(period: 1, subject: "수학", ambiguous: false), .init(period: 3, subject: "실습", ambiguous: false)])
+        let start = try XCTUnwrap(ISO8601DateFormatter().date(from: "2026-10-19T00:00:00Z"))
+        XCTAssertEqual(plan.lessonStatus(selection: "a", timetable: timetable, now: start.addingTimeInterval(-1)), "다음 1교시 수학 · 09:00 시작")
+        XCTAssertEqual(plan.lessonStatus(selection: "a", timetable: timetable, now: start), "지금 1교시 수학 · 다음 3교시 실습")
+        XCTAssertEqual(plan.lessonStatus(selection: "a", timetable: timetable, now: start.addingTimeInterval(45 * 60)), "다음 3교시 실습 · 10:05 시작")
+        XCTAssertNil(plan.lessonStatus(selection: "a", timetable: timetable, now: start.addingTimeInterval(115 * 60)))
+        XCTAssertNil(plan.lessonStatus(selection: "other", timetable: timetable, now: start))
+        XCTAssertNil(plan.lessonStatus(selection: "a", timetable: timetable, now: start.addingTimeInterval(86400)))
+        XCTAssertFalse(PreparationPlan.validBellTimes([first, .init(period: 2, startMinute: 584, endMinute: 620)]))
+        XCTAssertFalse(PreparationPlan.validBellTimes([first, .init(period: 1, startMinute: 620, endMinute: 670)]))
+        XCTAssertFalse(PreparationPlan.validBellTimes([.init(period: 1, startMinute: 600, endMinute: 600)]))
+    }
+
+    func testSummaryIncludesDeadlineStagesOnKnownNonSchoolDaysAndHonorsPause() throws {
+        let now = try XCTUnwrap(ISO8601DateFormatter().date(from: "2026-10-18T00:00:00Z"))
+        let task = PreparationTask(selection: settings.planningKey, title: "보고서", date: "2026-10-19", kind: .deadline)
+        let stage = PreparationStage(taskID: task.id, title: "초안 확인", date: "2026-10-18")
+        var plan = PreparationPlan(tasks: [task], stages: [stage], preferences: [.init(selection: settings.planningKey, morningMinute: 10 * 60)])
+        let cache = SchoolWeekCache(selection: settings, origin: "https://fixture.invalid", timetables: [.init(date: "2026-10-18", lessons: [])])
+        let notices = plan.notices(selection: settings.planningKey, cache: cache, plus: true, after: now, plusUntil: now.addingTimeInterval(7200))
+        XCTAssertEqual(notices.map(\.body), ["초안 확인"])
+        XCTAssertEqual(notices.map(\.preparationDate), ["2026-10-18"])
+        plan.preferences[0].pausedUntil = "2026-10-18"
+        XCTAssertTrue(plan.notices(selection: settings.planningKey, cache: cache, plus: true, after: now, plusUntil: now.addingTimeInterval(7200)).isEmpty)
+    }
+
     func testCalendarRangesUseKoreanDaysAndMondayWeeks() throws {
         let beforeMidnight = try XCTUnwrap(ISO8601DateFormatter().date(from: "2024-02-29T14:59:59Z"))
         XCTAssertEqual(SchoolCalendar.key(beforeMidnight), "2024-02-29")

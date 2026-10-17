@@ -9,6 +9,7 @@ struct SchoolTodayApp: App {
     @UIApplicationDelegateAdaptor(SchoolAppDelegate.self) private var appDelegate
     @StateObject private var store: SchoolStore
     init() {
+        _ = PlusStore.shared
         #if DEBUG
         if ProcessInfo.processInfo.arguments.contains("--ui-testing") {
             let defaults = UserDefaults(suiteName: "schooltoday.ui-tests")!
@@ -121,6 +122,8 @@ struct RootView: View {
     @EnvironmentObject private var store: SchoolStore
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var started = false
+    @State private var sharedSchool: SchoolSettings?
+    @State private var shareError: String?
     var body: some View {
         Group {
             if !store.onboardingComplete && !started {
@@ -147,6 +150,31 @@ struct RootView: View {
         .onChange(of: store.school) { _, school in
             if school == nil { started = false }
         }
+        .onOpenURL { url in
+            guard url.scheme == "schooltoday", url.host == "class" else { return }
+            Task {
+                do {
+                    let proposed = try SchoolSelectionLink.read(url)
+                    if store.api == nil { try await store.connect() }
+                    guard let api = store.api else { throw SchoolError.message("학교 서버에 먼저 연결해 주세요.") }
+                    let classes = try await api.classes(school: proposed.school)
+                    guard classes.contains(proposed.schoolClass) else { throw SchoolError.message("공유한 학급이 현재 학교 자료에 없어요. 학교와 반을 다시 선택해 주세요.") }
+                    sharedSchool = proposed
+                } catch { shareError = error.localizedDescription }
+            }
+        }
+        .alert("공유받은 학교 설정", isPresented: Binding(get: { sharedSchool != nil }, set: { if !$0 { sharedSchool = nil } })) {
+            Button("이 학급 사용") {
+                guard let settings = sharedSchool else { return }
+                do { try store.saveSchool(settings); store.finishOnboarding(); started = true }
+                catch { shareError = error.localizedDescription }
+                sharedSchool = nil
+            }
+            Button("취소", role: .cancel) { sharedSchool = nil }
+        } message: { Text("\(sharedSchool?.school.name ?? "") · \(sharedSchool?.classLabel ?? "")\n준비물·메모는 공유되지 않으며 기존 개인 기록도 지우지 않아요.") }
+        .alert("학교 설정을 확인해 주세요", isPresented: Binding(get: { shareError != nil }, set: { if !$0 { shareError = nil } })) {
+            Button("확인") { shareError = nil }
+        } message: { Text(shareError ?? "") }
     }
     private var plannerDirectory: URL? {
         #if DEBUG
@@ -263,6 +291,7 @@ struct SchoolSearchView: View {
 
 struct SettingsView: View {
     @EnvironmentObject private var store: SchoolStore
+    var planner: PlannerStore? = nil
     @State private var reset = false
     @State private var error: String?
     var body: some View {
@@ -274,8 +303,20 @@ struct SettingsView: View {
                     Text(store.school?.classLabel ?? "").foregroundStyle(.secondary)
                     Button("학교 변경") {
                         do { try store.saveSchool(nil) } catch { self.error = error.localizedDescription }
+                    }.buttonStyle(SchoolSecondaryButtonStyle())
+                    if let school = store.school, let url = SchoolSelectionLink.url(school) {
+                        ShareLink(item: url) { Label("친구에게 학교·반 설정 공유", systemImage: "square.and.arrow.up") }
+                            .buttonStyle(SchoolSecondaryButtonStyle())
+                        Text("학교·학년·반만 공유해요. 개인 준비물·과제·메모는 포함하지 않습니다.").font(.caption).foregroundStyle(.secondary)
                     }
                 }.modifier(SchoolCard())
+                if let planner {
+                    NavigationLink { PlannerOptionsView(planner: planner) } label: {
+                        Label("준비·알림·백업 설정", systemImage: "slider.horizontal.3")
+                    }.buttonStyle(SchoolPrimaryButtonStyle()).accessibilityIdentifier("planner-options")
+                }
+                NavigationLink { PlusView() } label: { Label("Plus 구독·구입 복원", systemImage: "sparkles") }
+                    .buttonStyle(SchoolSecondaryButtonStyle()).accessibilityIdentifier("open-plus")
                 VStack(alignment: .leading, spacing: 16) {
                     NavigationLink("Siri 사용법") { SiriGuideView(onboarding: false) }
                     NavigationLink("단축어 실행 점검") { ShortcutCheckView() }
@@ -287,12 +328,9 @@ struct SettingsView: View {
                     DemoNotice()
                     Text("학교 설정과 개인 준비 기록은 이 기기에 저장해요. 학교를 바꿔도 이전 준비 기록은 지우지 않습니다.")
                         .font(.footnote).foregroundStyle(.secondary)
-                    Text("구매 복원은 개인 기록 복원이 아닙니다. 앱 삭제·기기 변경에 대비한 동기화는 아직 제공하지 않아요.")
+                    Text("구매 복원은 Plus 권한만 복원합니다. 개인 기록은 준비·알림·백업 설정에서 파일로 옮기거나 직접 iCloud 동기화를 실행해 주세요.")
                         .font(.footnote).foregroundStyle(.secondary)
-                    DisclosureGroup("개인정보 안내") {
-                        Text("인터넷 연결이 필요해요. NEIS 키·Apple 로그인 정보는 앱에 저장하지 않아요.")
-                            .font(.footnote).foregroundStyle(.secondary).padding(.top, 8)
-                    }
+                    SchoolPrivacyNotice()
                     Button("학교 설정 초기화", role: .destructive) { reset = true }
                     if let error { Text(error).foregroundStyle(.red) }
                 }.modifier(SchoolCard())
@@ -304,6 +342,15 @@ struct SettingsView: View {
             Button("설정 삭제", role: .destructive) {
                 do { try store.saveSchool(nil) } catch { self.error = error.localizedDescription }
             }
+        }
+    }
+}
+
+struct SchoolPrivacyNotice: View {
+    var body: some View {
+        DisclosureGroup("개인정보 안내") {
+            Text("학교 조회에는 선택한 학교·학년·반을 운영 서버(time.mvtp.cloud)에 전송해요. NEIS 키는 서버에만 있고 앱에 저장하지 않습니다.\n\n준비물·과제·완료 기록은 기기에 저장하며 학교 조회 서버로 보내지 않아요. iCloud 동기화를 직접 실행할 때만 모든 학교의 개인 준비 기록을 본인의 iCloud 비공개 데이터베이스에 저장합니다. 자동 동기화는 하지 않아요. JSON 내보내기는 개인 기록 전체를 포함하므로 안전하게 보관해 주세요.\n\n구입은 Apple이 처리하며 앱은 Apple이 검증한 구독 이용 권한만 확인해요. Apple 계정 암호·결제 카드 정보를 수집하지 않습니다. 광고·추적 SDK는 사용하지 않아요. 개인 위젯과 알림을 켜면 준비 내용이 주변 사람에게 보일 수 있어요.")
+                .font(.footnote).foregroundStyle(.secondary).padding(.top, 8)
         }
     }
 }

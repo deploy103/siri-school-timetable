@@ -27,6 +27,11 @@ targets:
         MARKETING_VERSION: "0.1.0"
         CURRENT_PROJECT_VERSION: "1"
         CODE_SIGN_ENTITLEMENTS: SchoolToday.entitlements
+      configs:
+        Debug:
+          ICLOUD_CONTAINER_ENVIRONMENT: Development
+        Release:
+          ICLOUD_CONTAINER_ENVIRONMENT: Production
   SchoolTodayWidget:
     type: app-extension
     platform: iOS
@@ -39,7 +44,7 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.deploy103.schooltoday.widget
         INFOPLIST_FILE: SchoolTodayWidget/Info.plist
-        CODE_SIGN_ENTITLEMENTS: SchoolToday.entitlements
+        CODE_SIGN_ENTITLEMENTS: SchoolTodayWidget.entitlements
         APPLICATION_EXTENSION_API_ONLY: YES
         SKIP_INSTALL: YES
         TARGETED_DEVICE_FAMILY: "1"
@@ -69,4 +74,17 @@ schemes:
       targets:
         SchoolToday: all
     test:
-      targets: [SchoolTodayTests, SchoolTodayUITests]
+      targets:
+        - name: SchoolTodayTests
+          skippedTests: [PlusStoreKitTests]
+        - SchoolTodayUITests
+  SchoolToday-LocalStoreKit:
+    build:
+      targets:
+        SchoolToday: [run, test]
+    run:
+      storeKitConfiguration: SchoolTodayTests/Plus.storekit
+    test:
+      targets:
+        - name: SchoolTodayTests
+          selectedTests: [PlusStoreKitTests]

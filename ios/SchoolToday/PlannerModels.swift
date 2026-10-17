@@ -52,6 +52,29 @@ extension SchoolSettings {
     }
 }
 
+enum SchoolSelectionLink {
+    static func url(_ settings: SchoolSettings) -> URL? {
+        guard let data = try? JSONEncoder().encode(settings) else { return nil }
+        var components = URLComponents()
+        components.scheme = "schooltoday"
+        components.host = "class"
+        components.queryItems = [URLQueryItem(name: "school", value: data.base64EncodedString())]
+        return components.url
+    }
+    static func read(_ url: URL) throws -> SchoolSettings {
+        guard url.absoluteString.count < 8192, url.scheme == "schooltoday", url.host == "class",
+              let values = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems,
+              values.count == 1, values[0].name == "school", let encoded = values[0].value,
+              let data = Data(base64Encoded: encoded), let settings = try? JSONDecoder().decode(SchoolSettings.self, from: data),
+              !settings.school.officeCode.isEmpty, !settings.school.schoolCode.isEmpty,
+              !settings.school.name.isEmpty, (1...12).contains(settings.schoolClass.grade),
+              !settings.schoolClass.className.isEmpty else {
+            throw SchoolError.message("학교 설정 링크가 올바르지 않아요. 친구에게 다시 공유해 달라고 해 주세요.")
+        }
+        return settings
+    }
+}
+
 struct SchoolRange<Day: Codable>: Codable {
     let from: String
     let to: String
@@ -67,6 +90,8 @@ struct SchoolWeekCache: Codable {
     var mealCheckedAt: Date?
     var mode = ""
     var correctedDates: Set<String> = []
+    var preparation: [String: [PreparationOccurrence]]? = nil
+    var preparationUntil: Date? = nil
 }
 
 struct PreparationRule: Codable, Identifiable, Equatable {
@@ -86,6 +111,7 @@ struct PreparationTask: Codable, Identifiable, Equatable {
     var subject: String = ""
     var kind: Kind = .item
     var reminder: Date? = nil
+    var extraReminders: [Date]? = nil
 }
 
 struct LessonCorrection: Codable, Identifiable, Equatable {
@@ -97,7 +123,7 @@ struct LessonCorrection: Codable, Identifiable, Equatable {
     var id: String { "\(selection):\(date):\(period)" }
 }
 
-struct PreparationOccurrence: Identifiable, Equatable {
+struct PreparationOccurrence: Codable, Identifiable, Equatable {
     let id: String
     let title: String
     let subject: String
@@ -107,17 +133,19 @@ struct PreparationOccurrence: Identifiable, Equatable {
 }
 
 struct PreparationPlan: Codable, Equatable {
-    var version = 1
+    var version = 2
     var rules: [PreparationRule] = []
     var tasks: [PreparationTask] = []
     var completed: Set<String> = []
     var corrections: [LessonCorrection] = []
+    var stages: [PreparationStage] = []
+    var preferences: [PreparationPreference] = []
 
     static func subjectKey(_ value: String) -> String {
         value.trimmingCharacters(in: .whitespacesAndNewlines).precomposedStringWithCanonicalMapping
     }
 
-    func occurrences(on date: String, selection: String, lessons: [Timetable.Lesson]?, automaticLimit: Int = 1) -> [PreparationOccurrence] {
+    func occurrences(on date: String, selection: String, lessons: [Timetable.Lesson]?, automaticLimit: Int = 1, includeStages: Bool = false) -> [PreparationOccurrence] {
         let subjects = Set((lessons ?? []).filter { $0.ambiguous != true }.map { Self.subjectKey($0.subject) })
         var result: [PreparationOccurrence] = []
         // Keep creation order stable when a subscription expires. Records remain intact.
@@ -135,6 +163,14 @@ struct PreparationPlan: Codable, Equatable {
             let id = "task:\(task.id.uuidString)"
             if task.date == date {
                 result.append(PreparationOccurrence(id: id, title: task.title, subject: task.subject, date: date, automatic: false, completed: completed.contains(id)))
+            }
+        }
+        if includeStages {
+            for stage in stages where stage.date == date {
+                guard let task = tasks.first(where: { $0.id == stage.taskID && $0.selection == selection }),
+                      !completed.contains("task:\(task.id.uuidString)") else { continue }
+                let id = "stage:\(stage.id.uuidString)"
+                result.append(PreparationOccurrence(id: id, title: stage.title, subject: task.title, date: date, automatic: false, completed: completed.contains(id)))
             }
         }
         return result
@@ -159,7 +195,7 @@ struct PlannerArchive {
         let url = directory.appendingPathComponent("preparation-v1.json")
         guard FileManager.default.fileExists(atPath: url.path) else { return PreparationPlan() }
         let value = try JSONDecoder().decode(PreparationPlan.self, from: Data(contentsOf: url))
-        guard value.version == 1 else { throw SchoolError.message("다른 버전의 준비 기록이에요. 앱 업데이트를 확인해 주세요.") }
+        try value.validate()
         return value
     }
     func save(_ value: PreparationPlan) throws {
@@ -169,6 +205,157 @@ struct PlannerArchive {
         options.insert(.completeFileProtection)
         #endif
         try JSONEncoder().encode(value).write(to: directory.appendingPathComponent("preparation-v1.json"), options: options)
+    }
+}
+
+struct PreparationStage: Codable, Identifiable, Equatable {
+    var id = UUID()
+    let taskID: UUID
+    var title: String
+    var date: String
+    var reminder: Date? = nil
+}
+
+struct PreparationPreference: Codable, Equatable {
+    let selection: String
+    var eveningMinute: Int? = nil
+    var morningMinute: Int? = nil
+    var pausedUntil: String? = nil
+    var privateWidget = false
+    var bellTimes: [SchoolBellTime]? = nil
+}
+
+struct SchoolBellTime: Codable, Identifiable, Equatable {
+    var id = UUID()
+    var period: Int
+    var startMinute: Int
+    var endMinute: Int
+}
+
+struct PreparationNotice: Equatable {
+    let id: String
+    let title: String
+    let body: String
+    let fireDate: Date
+    let preparationDate: String
+}
+
+enum PlannerAccessError: Error, LocalizedError {
+    case plusRequired
+    var errorDescription: String? { "한 과목 자동 준비는 무료예요. 여러 과목·마감 준비 단계·추가 알림은 Plus로 사용할 수 있어요." }
+}
+
+enum DeadlineTemplate: String, CaseIterable, Identifiable {
+    case presentation = "발표", report = "보고서", practice = "실습 제출"
+    var id: String { rawValue }
+    func stages(for task: PreparationTask) -> [PreparationStage] {
+        let titles: [String]
+        switch self {
+        case .presentation: titles = ["발표 자료 조사", "자료·발표 파일 확인", "발표 준비 확인"]
+        case .report: titles = ["보고서 자료 모으기", "초안·출처 확인", "파일 제출 확인"]
+        case .practice: titles = ["실습 요구사항 확인", "결과·장비 점검", "실습 결과 제출"]
+        }
+        return zip([3, 1, 0], titles).compactMap { offset, title in
+            guard let date = SchoolCalendar.adding(-offset, to: task.date) else { return nil }
+            return PreparationStage(taskID: task.id, title: title, date: date)
+        }
+    }
+}
+
+extension PreparationPlan {
+    enum CodingKeys: String, CodingKey { case version, rules, tasks, completed, corrections, stages, preferences }
+
+    init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        let sourceVersion = try values.decode(Int.self, forKey: .version)
+        guard (1...2).contains(sourceVersion) else { throw SchoolError.message("다른 버전의 준비 기록이에요. 앱 업데이트를 확인해 주세요.") }
+        version = 2
+        rules = try values.decode([PreparationRule].self, forKey: .rules)
+        tasks = try values.decode([PreparationTask].self, forKey: .tasks)
+        completed = try values.decode(Set<String>.self, forKey: .completed)
+        corrections = try values.decode([LessonCorrection].self, forKey: .corrections)
+        stages = try values.decodeIfPresent([PreparationStage].self, forKey: .stages) ?? []
+        preferences = try values.decodeIfPresent([PreparationPreference].self, forKey: .preferences) ?? []
+    }
+
+    func validate() throws {
+        guard version == 2,
+              Set(rules.map(\.id)).count == rules.count, Set(tasks.map(\.id)).count == tasks.count,
+              Set(stages.map(\.id)).count == stages.count, Set(corrections.map(\.id)).count == corrections.count,
+              Set(preferences.map(\.selection)).count == preferences.count,
+              rules.allSatisfy({ !$0.selection.isEmpty && !Self.subjectKey($0.subject).isEmpty && !$0.items.isEmpty && $0.items.allSatisfy { !Self.subjectKey($0).isEmpty } }),
+              tasks.allSatisfy({ !$0.selection.isEmpty && !Self.subjectKey($0.title).isEmpty && SchoolCalendar.date($0.date) != nil }),
+              corrections.allSatisfy({ !$0.selection.isEmpty && SchoolCalendar.date($0.date) != nil && (1...20).contains($0.period) && !Self.subjectKey($0.subject).isEmpty }),
+              stages.allSatisfy({ stage in SchoolCalendar.date(stage.date) != nil && !Self.subjectKey(stage.title).isEmpty && tasks.contains { $0.id == stage.taskID && $0.kind == .deadline && stage.date <= $0.date } }),
+              preferences.allSatisfy({ !$0.selection.isEmpty && ($0.eveningMinute.map { (0..<1440).contains($0) } ?? true) && ($0.morningMinute.map { (0..<1440).contains($0) } ?? true) && ($0.pausedUntil.map { SchoolCalendar.date($0) != nil } ?? true) && Self.validBellTimes($0.bellTimes ?? []) }) else {
+            throw SchoolError.message("준비 기록의 날짜·과목·식별자가 올바르지 않아 적용하지 않았어요.")
+        }
+    }
+
+    static func validBellTimes(_ times: [SchoolBellTime]) -> Bool {
+        let sorted = times.sorted { $0.period < $1.period }
+        return Set(times.map(\.id)).count == times.count && Set(times.map(\.period)).count == times.count && times.allSatisfy {
+            (1...20).contains($0.period) && (0..<1440).contains($0.startMinute) && $0.startMinute < $0.endMinute && $0.endMinute < 1440
+        } && zip(sorted, sorted.dropFirst()).allSatisfy { $0.endMinute <= $1.startMinute }
+    }
+
+    func lessonStatus(selection: String, timetable: Timetable?, now: Date) -> String? {
+        guard let timetable, timetable.date == SchoolCalendar.key(now),
+              let times = preferences.first(where: { $0.selection == selection })?.bellTimes,
+              Self.validBellTimes(times) else { return nil }
+        let components = SchoolCalendar.calendar.dateComponents([.hour, .minute], from: now)
+        let minute = (components.hour ?? 0) * 60 + (components.minute ?? 0)
+        let lessons = timetable.lessons.filter { $0.ambiguous != true }
+        let remaining = times.sorted { $0.startMinute < $1.startMinute }.filter { time in
+            time.endMinute > minute && lessons.contains { $0.period == time.period }
+        }
+        guard let first = remaining.first, let lesson = lessons.first(where: { $0.period == first.period }) else { return nil }
+        let next = remaining.dropFirst().first.flatMap { time in lessons.first { $0.period == time.period } }
+        if first.startMinute <= minute {
+            return "지금 \(first.period)교시 \(lesson.subject)" + (next.map { " · 다음 \($0.period)교시 \($0.subject)" } ?? "")
+        }
+        return "다음 \(first.period)교시 \(lesson.subject) · \(String(format: "%02d:%02d", first.startMinute / 60, first.startMinute % 60)) 시작"
+    }
+
+    func notices(selection: String, cache: SchoolWeekCache?, plus: Bool, after now: Date, plusUntil: Date? = nil, limit: Int = 60) -> [PreparationNotice] {
+        var result: [PreparationNotice] = []
+        for task in tasks where task.selection == selection && !completed.contains("task:\(task.id.uuidString)") {
+            let extra = plus ? (task.extraReminders ?? []).filter { date in plusUntil.map { date < $0 } ?? true } : []
+            let dates = Set(([task.reminder].compactMap { $0 }) + extra)
+            for date in dates where date > now {
+                result.append(PreparationNotice(id: "task.\(task.id).\(date.timeIntervalSince1970)", title: task.kind == .deadline ? "마감 확인" : "챙길 것 확인", body: task.title, fireDate: date, preparationDate: task.date))
+            }
+        }
+        if plus {
+            for stage in stages where !completed.contains("stage:\(stage.id.uuidString)") {
+                guard let task = tasks.first(where: { $0.id == stage.taskID && $0.selection == selection }),
+                      !completed.contains("task:\(task.id.uuidString)"), let date = stage.reminder, date > now,
+                      plusUntil.map({ date < $0 }) ?? true else { continue }
+                result.append(PreparationNotice(id: "stage.\(stage.id)", title: "마감 준비", body: "\(task.title) · \(stage.title)", fireDate: date, preparationDate: stage.date))
+            }
+            if let preference = preferences.first(where: { $0.selection == selection }) {
+                for offset in 0..<7 {
+                    let key = SchoolCalendar.adding(offset, to: SchoolCalendar.key(now))!
+                    if let pause = preference.pausedUntil, key <= pause { continue }
+                    for (kind, minute) in [("evening", preference.eveningMinute), ("morning", preference.morningMinute)] {
+                        guard let minute, let day = SchoolCalendar.date(key),
+                              let fire = SchoolCalendar.calendar.date(byAdding: .minute, value: minute, to: day), fire > now,
+                              plusUntil.map({ fire < $0 }) ?? true else { continue }
+                        let target: String
+                        if kind == "evening" {
+                            let upcoming = (cache?.timetables ?? []).filter { $0.date > key && !$0.lessons.isEmpty }.map(\.date).sorted()
+                            target = upcoming.first ?? SchoolCalendar.adding(1, to: key)!
+                        } else { target = key }
+                        let lessons = cache?.timetables.first { $0.date == target }?.lessons
+                        let items = occurrences(on: target, selection: selection, lessons: lessons, automaticLimit: .max, includeStages: true).filter { !$0.completed }
+                        if items.isEmpty && lessons != nil { continue }
+                        let body = lessons == nil ? "시간표 확인 필요 · 앱에서 최신 자료와 준비를 확인해 주세요." : items.prefix(5).map(\.title).joined(separator: " · ")
+                        result.append(PreparationNotice(id: "\(kind).\(key)", title: kind == "evening" ? "다음 등교 준비" : "아침 준비 재확인", body: body, fireDate: fire, preparationDate: target))
+                    }
+                }
+            }
+        }
+        return Array(result.sorted { $0.fireDate == $1.fireDate ? $0.id < $1.id : $0.fireDate < $1.fireDate }.prefix(limit))
     }
 }
 

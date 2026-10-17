@@ -21,7 +21,10 @@ private struct SchoolProvider: TimelineProvider {
                 entries.append(SchoolEntry(date: date, cache: cache))
             }
         }
-        completion(Timeline(entries: entries, policy: .after(now.addingTimeInterval(60 * 60))))
+        if let end = cache?.preparationUntil, end > now, !entries.contains(where: { $0.date == end }) {
+            entries.append(SchoolEntry(date: end, cache: cache))
+        }
+        completion(Timeline(entries: entries.sorted { $0.date < $1.date }, policy: .after(now.addingTimeInterval(60 * 60))))
     }
 }
 
@@ -83,12 +86,54 @@ private struct SchoolWidgetView: View {
     }
 }
 
-@main
 struct SchoolTodayWidget: Widget {
     var body: some WidgetConfiguration {
         StaticConfiguration(kind: "SchoolDayWidget", provider: SchoolProvider()) { SchoolWidgetView(entry: $0) }
             .configurationDisplayName("학교 시간표·급식")
             .description("마지막으로 받은 오늘 자료를 봅니다. 갱신 시점은 시스템과 앱 사용에 따라 달라져요.")
             .supportedFamilies([.systemSmall, .systemMedium])
+    }
+}
+
+private struct SchoolPreparationWidgetView: View {
+    let entry: SchoolEntry
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Label("등교 준비", systemImage: "bag").font(.headline)
+            Text(SchoolCalendar.label(SchoolCalendar.key(entry.date), format: "M.d EEEE")).font(.caption).foregroundStyle(.secondary)
+            if let cache = entry.cache, cache.preparationUntil.map({ entry.date < $0 }) ?? true,
+               let preparation = cache.preparation {
+                let items = preparation[SchoolCalendar.key(entry.date)] ?? []
+                Text("\(items.filter(\.completed).count)/\(items.count) 완료").font(.headline)
+                ForEach(items.prefix(3)) { item in
+                    Label(item.title, systemImage: item.completed ? "checkmark.circle.fill" : "circle")
+                        .font(.caption).lineLimit(1)
+                }
+                if items.isEmpty { Text("앱에서 시간표와 준비를 확인해요.").font(.caption) }
+            } else {
+                Text("앱의 준비 설정에서 Plus와 개인 내용 표시를 확인해 주세요.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+            Spacer(minLength: 0)
+        }
+        .containerBackground(for: .widget) { Color(uiColor: .secondarySystemGroupedBackground) }
+        .widgetURL(URL(string: "schooltoday://preparation"))
+    }
+}
+
+private struct SchoolPreparationWidget: Widget {
+    var body: some WidgetConfiguration {
+        StaticConfiguration(kind: "SchoolPreparationWidget", provider: SchoolProvider()) { SchoolPreparationWidgetView(entry: $0) }
+            .configurationDisplayName("나만의 등교 준비")
+            .description("Plus에서 개인 내용 표시를 켠 경우에만 준비물·마감을 표시합니다.")
+            .supportedFamilies([.systemSmall, .systemMedium])
+    }
+}
+
+@main
+struct SchoolWidgets: WidgetBundle {
+    var body: some Widget {
+        SchoolTodayWidget()
+        SchoolPreparationWidget()
     }
 }
