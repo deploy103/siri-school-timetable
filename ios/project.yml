@@ -15,12 +15,34 @@ targets:
     type: application
     platform: iOS
     sources: [SchoolToday]
+    dependencies:
+      - target: SchoolTodayWidget
+        embed: true
     settings:
       base:
         TARGETED_DEVICE_FAMILY: "1"
         PRODUCT_BUNDLE_IDENTIFIER: com.deploy103.schooltoday
         INFOPLIST_FILE: SchoolToday/Info.plist
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        MARKETING_VERSION: "0.1.0"
+        CURRENT_PROJECT_VERSION: "1"
+        CODE_SIGN_ENTITLEMENTS: SchoolToday.entitlements
+  SchoolTodayWidget:
+    type: app-extension
+    platform: iOS
+    sources:
+      - SchoolTodayWidget
+      - SchoolToday/Models.swift
+      - SchoolToday/PlannerModels.swift
+      - SchoolToday/PrivacyInfo.xcprivacy
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.deploy103.schooltoday.widget
+        INFOPLIST_FILE: SchoolTodayWidget/Info.plist
+        CODE_SIGN_ENTITLEMENTS: SchoolToday.entitlements
+        APPLICATION_EXTENSION_API_ONLY: YES
+        SKIP_INSTALL: YES
+        TARGETED_DEVICE_FAMILY: "1"
         MARKETING_VERSION: "0.1.0"
         CURRENT_PROJECT_VERSION: "1"
   SchoolTodayTests:

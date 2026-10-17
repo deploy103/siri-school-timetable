@@ -18,8 +18,13 @@ final class SchoolTodayUITests: XCTestCase {
     }
 
     private func tap(_ element: XCUIElement, in app: XCUIApplication) {
+        // Form rows may not enter the accessibility tree until the user scrolls to them.
+        _ = element.waitForExistence(timeout: 5)
+        for _ in 0..<8 where !element.isHittable {
+            if element.exists && element.frame.maxY < app.frame.midY { app.swipeDown() }
+            else { app.swipeUp() }
+        }
         XCTAssertTrue(element.waitForExistence(timeout: 10))
-        for _ in 0..<8 where !element.isHittable { app.swipeUp() }
         XCTAssertTrue(element.isHittable)
         element.tap()
     }
@@ -39,7 +44,7 @@ final class SchoolTodayUITests: XCTestCase {
         tap(app.buttons["school-next"], in: app)
     }
 
-    private func chooseClass(_ app: XCUIApplication) {
+    private func chooseClass(_ app: XCUIApplication, guide: Bool = true) {
         chooseSchool(app)
         XCTAssertTrue(app.buttons["일반고"].waitForExistence(timeout: 10))
         XCTAssertFalse(app.buttons["class-step-next"].isEnabled)
@@ -58,8 +63,38 @@ final class SchoolTodayUITests: XCTestCase {
         XCTAssertTrue(app.buttons["class-next"].isEnabled)
         capture("native-class-selected", app: app)
         tap(app.buttons["class-next"], in: app)
+        XCTAssertTrue(app.tabBars.buttons["오늘"].waitForExistence(timeout: 10))
+        XCTAssertFalse(app.staticTexts["siri-guide-title"].exists)
+        if guide { openGuide(app) }
+    }
+
+    private func goToday(_ app: XCUIApplication) {
+        tap(app.tabBars.buttons["오늘"], in: app)
+        for _ in 0..<4 where !app.navigationBars["오늘"].exists {
+            app.navigationBars.buttons.element(boundBy: 0).tap()
+        }
+        for _ in 0..<3 { app.swipeDown() }
+    }
+
+    private func openGuide(_ app: XCUIApplication) {
+        goToday(app)
+        tap(app.buttons["siri-help"], in: app)
         XCTAssertTrue(app.staticTexts["siri-guide-title"].waitForExistence(timeout: 10))
-        XCTAssertFalse(app.tabBars.buttons["시간표"].exists)
+    }
+
+    private func openTimetable(_ app: XCUIApplication) {
+        goToday(app)
+        tap(app.buttons["시간표 읽기·공유"], in: app)
+    }
+
+    private func openMeals(_ app: XCUIApplication) {
+        goToday(app)
+        tap(app.buttons["급식 읽기·공유·알레르기 안내"], in: app)
+    }
+
+    private func openSettings(_ app: XCUIApplication) {
+        goToday(app)
+        tap(app.buttons["open-settings"], in: app)
     }
 
     private func finishGuide(_ app: XCUIApplication) {
@@ -102,19 +137,18 @@ final class SchoolTodayUITests: XCTestCase {
         }
         let finish = app.buttons["finish-onboarding"]
         XCTAssertTrue(finish.waitForExistence(timeout: 10))
-        XCTAssertFalse(app.tabBars.buttons["홈"].exists)
+        XCTAssertEqual(finish.label, "안내 닫기")
         capture("native-setup-complete", app: app)
         finish.tap()
-        XCTAssertTrue(app.tabBars.buttons["홈"].waitForExistence(timeout: 10))
-        XCTAssertTrue(app.tabBars.buttons["홈"].isSelected)
+        XCTAssertTrue(app.tabBars.buttons["오늘"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.tabBars.buttons["오늘"].isSelected)
         capture("native-home", app: app)
     }
 
     private func selectSchool(_ app: XCUIApplication, guide: Bool = false) {
-        chooseClass(app)
+        chooseClass(app, guide: guide)
         if guide { finishGuide(app) }
-        else { tap(app.buttons["skip-siri-setup"], in: app) }
-        app.tabBars.buttons["시간표"].tap()
+        openTimetable(app)
     }
 
     private func capture(_ name: String, app: XCUIApplication) {
@@ -156,6 +190,79 @@ final class SchoolTodayUITests: XCTestCase {
         tap(app.buttons["입력 완료"], in: app)
     }
 
+    func testPreparationLinkCompletionDatesAndPersistence() {
+        let app = launch()
+        chooseClass(app, guide: false)
+        XCTAssertTrue(app.buttons["1교시 수학, 준비물 추가"].waitForExistence(timeout: 10))
+        capture("planner-today", app: app)
+        tap(app.tabBars.buttons["주간"], in: app)
+        capture("planner-week", app: app)
+        tap(app.tabBars.buttons["오늘"], in: app)
+        tap(app.buttons["1교시 수학, 준비물 추가"], in: app)
+        XCTAssertEqual(app.textFields["preparation-subject"].value as? String, "수학")
+        tap(app.buttons["교재"], in: app)
+        capture("planner-link-subject", app: app)
+        tap(app.buttons["save-preparation"], in: app)
+        tap(app.tabBars.buttons["준비"], in: app)
+        let item = app.buttons["교재"]
+        XCTAssertTrue(item.waitForExistence(timeout: 5))
+        XCTAssertEqual(item.value as? String, "미완료")
+        item.tap()
+        XCTAssertEqual(item.value as? String, "완료")
+        capture("planner-completed", app: app)
+        tap(app.buttons["select-tomorrow"], in: app)
+        XCTAssertTrue(item.waitForExistence(timeout: 10))
+        XCTAssertEqual(item.value as? String, "미완료")
+        capture("planner-tomorrow", app: app)
+        tap(app.buttons["select-today"], in: app)
+        XCTAssertTrue(item.waitForExistence(timeout: 10))
+        XCTAssertEqual(item.value as? String, "완료")
+        app.terminate()
+        app.launchArguments = ["--ui-testing"]
+        app.launch()
+        XCTAssertTrue(app.tabBars.buttons["오늘"].waitForExistence(timeout: 10))
+        tap(app.tabBars.buttons["준비"], in: app)
+        XCTAssertEqual(item.value as? String, "완료")
+        tap(app.buttons["add-preparation"], in: app)
+        let title = app.textFields["preparation-title"]
+        XCTAssertTrue(title.waitForExistence(timeout: 5))
+        capture("planner-manual-editor", app: app)
+        title.tap(); title.typeText("동의서")
+        tap(app.buttons["save-preparation"], in: app)
+        XCTAssertTrue(app.buttons["동의서"].waitForExistence(timeout: 5))
+        capture("planner-preparation", app: app)
+        openGuide(app)
+        XCTAssertEqual(app.staticTexts["siri-guide-title"].label, "Siri 켜기")
+        capture("planner-optional-siri", app: app)
+        app.navigationBars["Siri 설정"].buttons["닫기"].tap()
+        openMeals(app)
+        XCTAssertTrue(app.staticTexts["계란국 (1)"].waitForExistence(timeout: 10))
+        capture("planner-meals", app: app)
+        goToday(app)
+        tap(app.buttons["수업 직접 추가"], in: app)
+        XCTAssertTrue(app.textFields["실제 수업 과목"].waitForExistence(timeout: 5))
+        capture("planner-correction", app: app)
+        tap(app.navigationBars["내 수업 수정"].buttons["취소"], in: app)
+    }
+
+    func testPlannerLargeTextKeepsActionsReachable() {
+        let app = launch(extra: ["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXXXL"])
+        chooseClass(app, guide: false)
+        capture("planner-large-today", app: app)
+        tap(app.buttons["1교시 수학, 준비물 추가"], in: app)
+        tap(app.buttons["교재"], in: app)
+        capture("planner-large-editor", app: app)
+        tap(app.buttons["save-preparation"], in: app)
+        tap(app.tabBars.buttons["준비"], in: app)
+        tap(app.buttons["교재"], in: app)
+        XCTAssertEqual(app.buttons["교재"].value as? String, "완료")
+        capture("planner-large-preparation", app: app)
+        tap(app.buttons["select-tomorrow"], in: app)
+        XCTAssertTrue(app.buttons["교재"].waitForExistence(timeout: 10))
+        XCTAssertEqual(app.buttons["교재"].value as? String, "미완료")
+        capture("planner-large-tomorrow", app: app)
+    }
+
     func testEmptyClassesCanReloadWithoutRestartingSchoolSetup() {
         let app = launch(extra: ["--general-school", "--empty-first-classes"])
         chooseSchool(app)
@@ -170,9 +277,8 @@ final class SchoolTodayUITests: XCTestCase {
         tap(app.buttons["class-step-next"], in: app)
         tap(app.buttons["3반"], in: app)
         tap(app.buttons["class-next"], in: app)
-        XCTAssertTrue(app.buttons["skip-siri-setup"].waitForExistence(timeout: 10))
-        tap(app.buttons["skip-siri-setup"], in: app)
-        XCTAssertTrue(app.tabBars.buttons["홈"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.tabBars.buttons["오늘"].waitForExistence(timeout: 10))
+        XCTAssertFalse(app.staticTexts["siri-guide-title"].exists)
         XCTAssertTrue(app.staticTexts["2학년 3반"].exists)
     }
 
@@ -203,8 +309,7 @@ final class SchoolTodayUITests: XCTestCase {
             XCTAssertFalse(app.buttons["class-next"].isEnabled)
             tap(app.buttons["2반"], in: app)
             tap(app.buttons["class-next"], in: app)
-            tap(app.buttons["skip-siri-setup"], in: app)
-            XCTAssertTrue(app.tabBars.buttons["홈"].waitForExistence(timeout: 10))
+            XCTAssertTrue(app.tabBars.buttons["오늘"].waitForExistence(timeout: 10))
             XCTAssertTrue(app.staticTexts["1학년 2반"].exists)
             XCTAssertFalse(app.staticTexts["7차일반 · 1학년 2반"].exists)
             capture(middle ? "native-middle-selection-saved" : "native-general-selection-saved", app: app)
@@ -234,7 +339,6 @@ final class SchoolTodayUITests: XCTestCase {
         XCTAssertFalse(app.buttons["class-next"].isEnabled)
         tap(app.buttons["3반"], in: app)
         tap(app.buttons["class-next"], in: app)
-        tap(app.buttons["skip-siri-setup"], in: app)
         XCTAssertTrue(app.staticTexts["클라우드보안과 · 2학년 3반"].waitForExistence(timeout: 10))
         XCTAssertFalse(app.staticTexts["콘텐츠과 · 2학년 3반"].exists)
     }
@@ -257,7 +361,8 @@ final class SchoolTodayUITests: XCTestCase {
         app.terminate()
         app.launchArguments = ["--ui-testing"]
         app.launch()
-        tap(app.buttons["start-onboarding"], in: app)
+        XCTAssertTrue(app.tabBars.buttons["오늘"].waitForExistence(timeout: 10))
+        openGuide(app)
         tap(app.buttons["guide-next"], in: app)
         tap(app.buttons["guide-next"], in: app)
         XCTAssertEqual(callName("timetable", in: app).value as? String, "학교 시간표")
@@ -301,8 +406,8 @@ final class SchoolTodayUITests: XCTestCase {
         XCTAssertEqual(app.staticTexts["siri-call-phrase"].label, "점심 뭐야")
         tap(app.buttons["guide-next"], in: app)
         tap(app.buttons["finish-onboarding"], in: app)
-        XCTAssertTrue(app.tabBars.buttons["홈"].waitForExistence(timeout: 10))
-        tap(app.buttons["siri-help"], in: app)
+        XCTAssertTrue(app.tabBars.buttons["오늘"].waitForExistence(timeout: 10))
+        openGuide(app)
         tap(app.buttons["guide-next"], in: app)
         tap(app.buttons["guide-next"], in: app)
         XCTAssertEqual(callName("timetable", in: app).value as? String, "학교 시간표")
@@ -341,8 +446,8 @@ final class SchoolTodayUITests: XCTestCase {
         tap(app.buttons["guide-next"], in: app)
         XCTAssertEqual(app.staticTexts["chosen-shortcut-name"].label, "학교 시간표")
         capture("native-large-text-save", app: app)
-        tap(app.buttons["skip-siri-setup"], in: app)
-        XCTAssertTrue(app.tabBars.buttons["홈"].waitForExistence(timeout: 10))
+        tap(app.navigationBars["Siri 설정"].buttons["닫기"], in: app)
+        XCTAssertTrue(app.tabBars.buttons["오늘"].waitForExistence(timeout: 10))
     }
 
     func testNativeSetupTimetableMealsSettingsAndRelaunch() {
@@ -357,7 +462,7 @@ final class SchoolTodayUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["missing-periods"].label.contains("2교시"))
         XCTAssertTrue(app.buttons["share-today"].exists)
         capture("native-timetable", app: app)
-        app.tabBars.buttons["급식"].tap()
+        openMeals(app)
         XCTAssertTrue(app.staticTexts["계란국 (1)"].waitForExistence(timeout: 10))
         XCTAssertTrue(app.staticTexts["알레르기: 난류"].exists)
         capture("native-meals", app: app)
@@ -380,20 +485,20 @@ final class SchoolTodayUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["쌀: 국내산"].exists)
         XCTAssertTrue(app.buttons["share-today"].exists)
         capture("native-meal-details", app: app)
-        app.tabBars.buttons["설정"].tap()
+        openSettings(app)
         XCTAssertTrue(app.buttons["open-school-shortcuts"].isHittable)
         XCTAssertTrue(app.buttons["Siri 사용법"].exists)
         capture("native-settings", app: app)
         app.terminate()
         app.launchArguments = ["--ui-testing"]
         app.launch()
-        XCTAssertTrue(app.tabBars.buttons["홈"].waitForExistence(timeout: 10))
-        XCTAssertTrue(app.tabBars.buttons["홈"].isSelected)
+        XCTAssertTrue(app.tabBars.buttons["오늘"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.tabBars.buttons["오늘"].isSelected)
         XCTAssertFalse(app.buttons["start-onboarding"].exists)
-        app.tabBars.buttons["시간표"].tap()
+        openTimetable(app)
         XCTAssertTrue(app.staticTexts["수학"].waitForExistence(timeout: 10))
         XCTAssertTrue(app.staticTexts["콘텐츠과 · 2학년 3반"].exists)
-        app.tabBars.buttons["설정"].tap()
+        openSettings(app)
         let reset = app.buttons["학교 설정 초기화"]
         for _ in 0..<3 where !reset.isHittable { app.swipeUp() }
         XCTAssertTrue(reset.isHittable)
@@ -421,18 +526,15 @@ final class SchoolTodayUITests: XCTestCase {
         app.terminate()
         app.launchArguments = ["--ui-testing"]
         app.launch()
-        XCTAssertTrue(app.buttons["start-onboarding"].waitForExistence(timeout: 10))
-        app.buttons["start-onboarding"].tap()
-        XCTAssertTrue(app.buttons["skip-siri-setup"].waitForExistence(timeout: 10))
-        app.buttons["skip-siri-setup"].tap()
-        XCTAssertTrue(app.tabBars.buttons["홈"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.tabBars.buttons["오늘"].waitForExistence(timeout: 10))
+        XCTAssertFalse(app.buttons["start-onboarding"].exists)
         XCTAssertFalse(app.staticTexts["siri-guide-title"].exists)
         capture("native-siri-deferred-home", app: app)
         app.terminate()
         app.launch()
-        XCTAssertTrue(app.tabBars.buttons["홈"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.tabBars.buttons["오늘"].waitForExistence(timeout: 10))
         XCTAssertFalse(app.buttons["start-onboarding"].exists)
-        app.buttons["siri-help"].tap()
+        openGuide(app)
         XCTAssertTrue(app.staticTexts["siri-guide-title"].waitForExistence(timeout: 10))
         XCTAssertEqual(app.staticTexts["siri-guide-title"].label, "Siri 켜기")
         XCTAssertFalse(app.buttons["skip-siri-setup"].exists)
@@ -453,12 +555,9 @@ final class SchoolTodayUITests: XCTestCase {
         app.navigationBars["Siri 켜기"].buttons["닫기"].tap()
         XCTAssertEqual(app.staticTexts["siri-guide-title"].label, "Siri 켜기")
         app.navigationBars["Siri 설정"].buttons["닫기"].tap()
-        app.buttons.containing(NSPredicate(format: "label CONTAINS %@", "급식 보기")).firstMatch.tap()
-        XCTAssertTrue(app.tabBars.buttons["급식"].isSelected)
+        openMeals(app)
         XCTAssertTrue(app.staticTexts["계란국 (1)"].waitForExistence(timeout: 10))
-        app.tabBars.buttons["홈"].tap()
-        app.buttons.containing(NSPredicate(format: "label CONTAINS %@", "시간표 보기")).firstMatch.tap()
-        XCTAssertTrue(app.tabBars.buttons["시간표"].isSelected)
+        openTimetable(app)
         XCTAssertTrue(app.staticTexts["수학"].waitForExistence(timeout: 10))
     }
 
@@ -473,7 +572,7 @@ final class SchoolTodayUITests: XCTestCase {
     func testShortcutCheckFailureRetryAndBothResults() {
         let app = launch(extra: ["--fail-first-voice"])
         selectSchool(app)
-        app.tabBars.buttons["홈"].tap()
+        goToday(app)
         let check = app.buttons["shortcut-check"]
         for _ in 0..<3 where !check.isHittable { app.swipeUp() }
         XCTAssertTrue(check.isHittable)
@@ -503,7 +602,7 @@ final class SchoolTodayUITests: XCTestCase {
         app.swipeUp()
         capture("native-shortcut-check-instructions", app: app)
         app.buttons["닫기"].tap()
-        XCTAssertTrue(app.tabBars.buttons["홈"].isSelected)
+        XCTAssertTrue(app.tabBars.buttons["오늘"].isSelected)
     }
 
     func testFailedLookupOffersRetryWithoutOldLessons() {
@@ -538,7 +637,7 @@ final class SchoolTodayUITests: XCTestCase {
         XCTAssertFalse(app.staticTexts["수학"].exists)
         XCTAssertFalse(app.buttons["share-today"].exists)
         capture("native-wrong-day-timetable", app: app)
-        app.tabBars.buttons["급식"].tap()
+        openMeals(app)
         XCTAssertTrue(app.staticTexts["오늘 날짜의 급식이 아닙니다. 잠시 뒤 새로고침해 주세요."].waitForExistence(timeout: 10))
         XCTAssertFalse(app.staticTexts["계란국 (1)"].exists)
         XCTAssertFalse(app.buttons["read-today"].exists)
