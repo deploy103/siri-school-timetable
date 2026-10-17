@@ -58,7 +58,7 @@ struct WidgetCenter {
 }
 actor PreparationNotifications {
     static let shared = PreparationNotifications()
-    func synchronize(plan: PreparationPlan, selection: String) async -> String? { nil }
+    func synchronize(plan: PreparationPlan, selection: String, cache: SchoolWeekCache? = nil, plus: Bool = false, plusUntil: Date? = nil) async -> String? { nil }
 }
 '''
 planner = (root / 'ios/SchoolToday/PlannerStore.swift').read_text().replace('import Combine', '').replace('import WidgetKit', '')

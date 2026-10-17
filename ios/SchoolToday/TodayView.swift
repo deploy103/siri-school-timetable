@@ -92,7 +92,10 @@ struct TodayView: View {
                     Text(settings.school.name).font(.headline)
                     Text(settings.classLabel).foregroundStyle(.secondary)
                     DemoNotice()
-                    if let date = model.timetable?.date ?? model.meals?.date { Text(date).font(.caption) }
+                    if let date = model.timetable?.date ?? model.meals?.date {
+                        Label(SchoolCalendar.label(date), systemImage: "calendar")
+                            .font(.subheadline.bold()).foregroundStyle(SchoolDesign.blue)
+                    }
                     if let fetchedAt = model.fetchedAt {
                         Text("마지막 확인 \(fetchedAt.formatted(date: .omitted, time: .shortened))")
                             .font(.caption).foregroundStyle(.secondary)

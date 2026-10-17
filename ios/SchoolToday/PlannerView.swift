@@ -6,9 +6,11 @@ struct SchoolDashboard: View {
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @StateObject private var planner: PlannerStore
+    @ObservedObject private var plus = PlusStore.shared
     @State private var tab = 0
     @State private var day = SchoolCalendar.key()
     @State private var currentDay = SchoolCalendar.key()
+    @State private var now = Date()
     @State private var refresh = 0
     @State private var siri = false
     @State private var editor: PreparationDraft?
@@ -78,16 +80,22 @@ struct SchoolDashboard: View {
             }.tabItem { Label("준비", systemImage: "checklist") }.tag(2)
         }
         .tint(SchoolDesign.blue)
-        .environment(\.timeZone, SchoolCalendar.calendar.timeZone)
         .task(id: "\(SchoolCalendar.week(containing: day).first ?? day):\(refresh)") {
             await planner.refresh(containing: day)
         }
-        .onChange(of: scenePhase) { _, phase in if phase == .active { openNotificationDate(); refresh += 1 } }
+        .task { await plus.refresh(); planner.updateAccess(plus.isPlus, until: plus.validUntil) }
+        .onChange(of: plus.isPlus) { _, enabled in planner.updateAccess(enabled, until: plus.validUntil) }
+        .onChange(of: plus.validUntil) { _, until in planner.updateAccess(plus.isPlus, until: until) }
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .active { openNotificationDate(); refresh += 1; Task { await plus.refresh() } }
+        }
         .onAppear(perform: openNotificationDate)
         .onReceive(NotificationCenter.default.publisher(for: .showSchoolPreparation)) { _ in openNotificationDate() }
         .onChange(of: schoolStore.online) { _, online in if online && scenePhase == .active { refresh += 1 } }
         .onReceive(timer) { now in
             guard scenePhase == .active else { return }
+            self.now = now
+            Task { await plus.refresh() }
             let nextDay = SchoolCalendar.key(now)
             if nextDay != currentDay {
                 if day == currentDay { day = nextDay }
@@ -97,6 +105,7 @@ struct SchoolDashboard: View {
         }
         .onOpenURL { url in
             if url.scheme == "schooltoday", url.host == "today" { day = SchoolCalendar.key(); tab = 0 }
+            if url.scheme == "schooltoday", url.host == "preparation" { day = SchoolCalendar.key(); tab = 2 }
         }
         .sheet(isPresented: $siri) { NavigationStack { SiriGuideView(onboarding: false) } }
         .sheet(item: $editor) { draft in
@@ -110,6 +119,7 @@ struct SchoolDashboard: View {
                 Button("일정 삭제", role: .destructive) { try? planner.deleteTask(task); deletingTask = nil }
             }
         }
+        .environment(\.timeZone, SchoolCalendar.calendar.timeZone)
     }
 
     private func page<Content: View>(_ identifier: String, @ViewBuilder content: () -> Content) -> some View {
@@ -145,40 +155,13 @@ struct SchoolDashboard: View {
 
     @ToolbarContentBuilder private var settingsButton: some ToolbarContent {
         ToolbarItem(placement: .topBarTrailing) {
-            NavigationLink { SettingsView() } label: { Image(systemName: "gearshape") }
+            NavigationLink { SettingsView(planner: planner) } label: { Image(systemName: "gearshape") }
                 .accessibilityLabel("설정").accessibilityIdentifier("open-settings")
         }
     }
 
     private var datePicker: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            let layout = dynamicTypeSize.isAccessibilitySize
-                ? AnyLayout(VStackLayout(alignment: .leading, spacing: 8))
-                : AnyLayout(HStackLayout(spacing: 8))
-            layout {
-                Text(SchoolCalendar.label(day)).font(.title3.bold()).fixedSize(horizontal: false, vertical: true)
-                if !dynamicTypeSize.isAccessibilitySize { Spacer(minLength: 4) }
-                DatePicker("날짜 선택", selection: Binding(get: { SchoolCalendar.date(day) ?? Date() }, set: { day = SchoolCalendar.key($0) }), displayedComponents: .date)
-                    .labelsHidden().fixedSize().accessibilityIdentifier("planner-date")
-            }
-            HStack(spacing: 12) {
-                Button("오늘") { day = SchoolCalendar.key() }
-                    .accessibilityIdentifier("select-today")
-                Button("내일") { day = SchoolCalendar.adding(1, to: SchoolCalendar.key())! }
-                    .accessibilityIdentifier("select-tomorrow")
-                Spacer()
-                if !dynamicTypeSize.isAccessibilitySize { dayArrows }
-            }.buttonStyle(.bordered).controlSize(.regular)
-            if dynamicTypeSize.isAccessibilitySize {
-                HStack(spacing: 12) { dayArrows }.buttonStyle(.bordered)
-            }
-        }
-    }
-    @ViewBuilder private var dayArrows: some View {
-        Button { day = SchoolCalendar.adding(-1, to: day)! } label: { Image(systemName: "chevron.left") }
-            .accessibilityLabel("이전 날").frame(minWidth: 44, minHeight: 44)
-        Button { day = SchoolCalendar.adding(1, to: day)! } label: { Image(systemName: "chevron.right") }
-            .accessibilityLabel("다음 날").frame(minWidth: 44, minHeight: 44)
+        SchoolDayHeader(day: $day)
     }
     private var weekNavigation: some View {
         HStack {
@@ -190,7 +173,7 @@ struct SchoolDashboard: View {
             Spacer()
             Button { day = SchoolCalendar.adding(7, to: day)! } label: { Image(systemName: "chevron.right") }
                 .accessibilityLabel("다음 주").frame(minWidth: 44, minHeight: 44)
-        }
+        }.modifier(SchoolCard())
     }
     private var preparationSummary: some View {
         let items = planner.occurrences(on: day)
@@ -217,6 +200,11 @@ struct SchoolDashboard: View {
     private var timetableCard: some View {
         VStack(alignment: .leading, spacing: 16) {
             Text("시간표").font(.title3.bold())
+            if let status = planner.plan.lessonStatus(selection: planner.settings.planningKey, timetable: planner.timetable(on: day), now: now) {
+                Label(status, systemImage: "clock.fill")
+                    .font(.headline).foregroundStyle(SchoolDesign.blue)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
             if let timetable = planner.timetable(on: day) {
                 if timetable.lessons.isEmpty {
                     Text("등록된 시간표가 없어요.").font(.headline)
@@ -345,7 +333,7 @@ struct SchoolDashboard: View {
     private var linkedSubjects: some View {
         VStack(alignment: .leading, spacing: 16) {
             Text("수업에 연결한 준비").font(.headline)
-            Text("한 과목은 계속 무료 · 받은 시간표 기준").font(.footnote).foregroundStyle(.secondary)
+            Text(planner.plusEnabled ? "Plus · 여러 과목 자동 준비" : "한 과목은 계속 무료 · 받은 시간표 기준").font(.footnote).foregroundStyle(.secondary)
             ForEach(planner.rules) { rule in
                 Button { editor = PreparationDraft(date: day, subject: rule.subject, automatic: true, items: rule.items.joined(separator: ", ")) } label: {
                     HStack {
@@ -357,9 +345,13 @@ struct SchoolDashboard: View {
                         Image(systemName: "pencil")
                     }.frame(minHeight: 44)
                 }.buttonStyle(.plain)
+                if !planner.plusEnabled, let first = planner.rules.first, first.id != rule.id {
+                    Button("이 과목을 무료 자동 준비로 사용") { try? planner.useFreeRule(rule) }
+                        .buttonStyle(SchoolSecondaryButtonStyle())
+                    Text("기록은 보존되며 지금은 자동 연결이 일시 중지된 과목이에요.").font(.caption).foregroundStyle(.secondary)
+                }
             }
-            Text("여러 과목 자동 연결과 마감 준비 단계는 Plus로 준비 중이에요. 아직 결제를 받지 않습니다.")
-                .font(.footnote).foregroundStyle(.secondary)
+            if !planner.plusEnabled { NavigationLink("Plus · 여러 과목과 마감 준비") { PlusView() } }
         }.modifier(SchoolCard())
     }
     private var savedTasks: some View {
@@ -368,10 +360,16 @@ struct SchoolDashboard: View {
             ForEach(planner.tasks.sorted { $0.date < $1.date }) { task in
                 HStack {
                     VStack(alignment: .leading, spacing: 4) {
-                        Text(task.title)
+                        Button(task.title) { editor = PreparationDraft(date: task.date, subject: task.subject, task: task) }
+                            .buttonStyle(.plain).font(.headline).frame(minHeight: 44).accessibilityLabel("\(task.title) 일정 수정")
                         if let reminder = task.reminder { Text("알림 \(reminder.formatted(date: .abbreviated, time: .shortened))").font(.caption).foregroundStyle(.secondary) }
                         Text("\(SchoolCalendar.label(task.date, format: "M.d E")) · \(task.kind == .deadline ? "마감" : "준비물")")
                             .font(.caption).foregroundStyle(.secondary)
+                        let stages = planner.plan.stages.filter { $0.taskID == task.id }
+                        ForEach(stages) { stage in
+                            Text("\(SchoolCalendar.label(stage.date, format: "M.d")) · \(stage.title)\(planner.plan.completed.contains("stage:\(stage.id.uuidString)") ? " · 완료" : "")")
+                                .font(.caption).foregroundStyle(.secondary)
+                        }
                     }
                     Spacer()
                     Button(role: .destructive) { deletingTask = task } label: { Image(systemName: "trash") }
@@ -393,6 +391,7 @@ private struct PreparationDraft: Identifiable {
     var subject = ""
     var automatic = false
     var items = ""
+    var task: PreparationTask? = nil
 }
 
 private struct PreparationEditor: View {
@@ -407,67 +406,135 @@ private struct PreparationEditor: View {
     @State private var remind = false
     @State private var reminder = Date().addingTimeInterval(60 * 60)
     @State private var saving = false
+    @State private var extraReminders: [Date] = []
+    @State private var stages: [PreparationStage] = []
+    @State private var taskID = UUID()
+    @State private var showingPlus = false
+    @State private var initialized = false
 
     private var existingRule: PreparationRule? { planner.rules.first { $0.subject == draft.subject } }
     var body: some View {
         NavigationStack {
-            Form {
-                Section {
-                    TextField("과목 (선택)", text: $draft.subject).accessibilityIdentifier("preparation-subject")
+            SchoolEditorPage {
+                VStack(alignment: .leading, spacing: 16) {
+                    Label("수업과 연결하기", systemImage: "books.vertical").font(.headline)
+                    TextField("과목 (선택)", text: $draft.subject).modifier(SchoolField()).accessibilityIdentifier("preparation-subject")
                     Toggle("수업이 있는 날마다 자동 준비", isOn: $draft.automatic)
                         .accessibilityIdentifier("preparation-automatic")
-                } footer: {
                     Text("자동 연결 한 과목은 계속 무료예요. 자료가 없는 날짜는 시간표 확인이 필요합니다.")
-                }
+                        .font(.footnote).foregroundStyle(.secondary)
+                }.modifier(SchoolCard())
                 if draft.automatic {
-                    Section("준비물") {
+                    VStack(alignment: .leading, spacing: 16) {
+                        Text("무엇을 챙길까요?").font(.title3.bold())
                         TextField("체육복, 교재, 충전기", text: $draft.items, axis: .vertical)
-                            .accessibilityIdentifier("preparation-items")
+                            .modifier(SchoolField()).accessibilityIdentifier("preparation-items")
                         Text("쉼표로 나눠 입력해요.").font(.footnote).foregroundStyle(.secondary)
                         quickItems
-                    }
+                    }.modifier(SchoolCard())
                     let dates = planner.cache.timetables.compactMap { planner.timetable(on: $0.date) }.filter { day in day.lessons.contains { PreparationPlan.subjectKey($0.subject) == PreparationPlan.subjectKey(draft.subject) && $0.ambiguous != true } }.map(\.date).sorted()
-                    Section("받은 시간표에 적용되는 날짜") {
+                    VStack(alignment: .leading, spacing: 14) {
+                        Label("받은 시간표에 적용되는 날짜", systemImage: "calendar.badge.checkmark").font(.headline)
                         if dates.isEmpty { Text("아직 적용 날짜를 확인하지 못했어요. 시간표를 새로 받으면 다시 계산해요.") }
                         ForEach(dates, id: \.self) { date in Text(SchoolCalendar.label(date)) }
-                    }
+                    }.modifier(SchoolCard())
                 } else {
-                    Section {
-                        Picker("종류", selection: $kind) {
-                            Text("준비물").tag(PreparationTask.Kind.item)
-                            Text("과제·시험 마감").tag(PreparationTask.Kind.deadline)
+                    VStack(alignment: .leading, spacing: 16) {
+                        Text("직접 챙길 일정").font(.title3.bold())
+                        HStack {
+                            kindButton("준비물", value: .item)
+                            kindButton("과제·시험 마감", value: .deadline)
                         }
-                        TextField("챙길 것 또는 마감 제목", text: $title).accessibilityIdentifier("preparation-title")
-                        DatePicker("날짜", selection: Binding(get: { SchoolCalendar.date(draft.date) ?? Date() }, set: { draft.date = SchoolCalendar.key($0) }), displayedComponents: .date)
-                    }
-                    Section {
+                        TextField("챙길 것 또는 마감 제목", text: $title).modifier(SchoolField()).accessibilityIdentifier("preparation-title")
+                    }.modifier(SchoolCard())
+                    SchoolDateButton(day: $draft.date, label: kind == .deadline ? "마감 날짜" : "준비 날짜", accessibilityIdentifier: "preparation-date")
+                    if kind == .deadline { deadlineStages }
+                    VStack(alignment: .leading, spacing: 14) {
+                        Label("필요한 때만 알림", systemImage: "bell").font(.headline)
                         Toggle("이 일정 알림 받기", isOn: $remind)
-                        if remind { DatePicker("알림 시각", selection: $reminder, in: Date()...) }
-                    } footer: {
-                        Text("일정당 한 번, 선택한 시각에 알려요. 잠금 화면에 제목이 보일 수 있으며 실제 전달은 iPhone 알림·집중 모드 설정에 따라 달라져요.")
+                        Text("기본 알림은 한 번 무료예요. 알림 제목은 잠금 화면에 보일 수 있고 집중 모드에 따라 전달이 달라져요.")
+                            .font(.footnote).foregroundStyle(.secondary)
+                    }.modifier(SchoolCard())
+                    if remind {
+                        SchoolReminderEditor(date: $reminder)
+                        ForEach(extraReminders.indices, id: \.self) { index in
+                            VStack(spacing: 8) {
+                                SchoolReminderEditor(date: $extraReminders[index])
+                                Button("추가 알림 삭제", role: .destructive) { extraReminders.remove(at: index) }.frame(minHeight: 44)
+                            }
+                        }
+                        Button("사전 알림 추가 · Plus") {
+                            extraReminders.append(Date().addingTimeInterval(7200))
+                        }.buttonStyle(SchoolSecondaryButtonStyle())
                     }
                 }
-                if let error { Section { Text(error).foregroundStyle(.red).accessibilityIdentifier("preparation-error") } }
+                if let error { Text(error).foregroundStyle(.red).accessibilityIdentifier("preparation-error") }
                 if let rule = existingRule, draft.automatic {
-                    Section { Button("자동 연결 삭제", role: .destructive) { delete = true } }
+                    Button("자동 연결 삭제", role: .destructive) { delete = true }.frame(minHeight: 44)
                         .confirmationDialog("연결을 삭제할까요? 직접 적은 일정은 유지돼요.", isPresented: $delete, titleVisibility: .visible) {
                             Button("연결 삭제", role: .destructive) {
                                 do { try planner.deleteRule(rule); dismiss() } catch { self.error = error.localizedDescription }
                             }
                         }
                 }
-                Section {
-                    Text("기록은 이 기기에 저장됩니다. 앱 삭제·기기 변경 시 자동 복원되지 않아요.")
-                        .font(.footnote).foregroundStyle(.secondary)
-                }
+                Text("기록은 이 기기에 보관해요. 설정의 백업·iCloud 동기화로 직접 이전할 수 있으며 구입 복원은 개인 기록을 복원하지 않아요.")
+                    .font(.footnote).foregroundStyle(.secondary)
+                Button(saving ? "저장 중…" : "준비 저장") { Task { await save() } }
+                    .buttonStyle(SchoolPrimaryButtonStyle()).disabled(saving || planner.storageBlocked)
             }
             .navigationTitle("준비 추가").navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("취소") { dismiss() } }
                 ToolbarItem(placement: .confirmationAction) { Button("저장") { Task { await save() } }.bold().disabled(saving || planner.storageBlocked).accessibilityIdentifier("save-preparation") }
             }
-            .onAppear { if let rule = existingRule, draft.items.isEmpty { draft.items = rule.items.joined(separator: ", ") } }
+            .onAppear {
+                guard !initialized else { return }; initialized = true
+                if let rule = existingRule, draft.items.isEmpty { draft.items = rule.items.joined(separator: ", ") }
+                if let task = draft.task {
+                    taskID = task.id; title = task.title; kind = task.kind
+                    remind = task.reminder != nil
+                    if let date = task.reminder { reminder = date }
+                    extraReminders = task.extraReminders ?? []
+                    stages = planner.plan.stages.filter { $0.taskID == task.id }
+                }
+            }
+            .sheet(isPresented: $showingPlus) {
+                PlusView(onActivated: { planner.updateAccess(PlusStore.shared.isPlus, until: PlusStore.shared.validUntil); Task { await save() } })
+            }
+            .environment(\.timeZone, SchoolCalendar.calendar.timeZone)
         }
+    }
+    private func kindButton(_ text: String, value: PreparationTask.Kind) -> some View {
+        Button { kind = value } label: {
+            Text(text).font(.subheadline.bold()).frame(maxWidth: .infinity, minHeight: 48)
+                .foregroundStyle(kind == value ? .white : SchoolDesign.blue)
+                .background(kind == value ? SchoolDesign.blue : SchoolDesign.blue.opacity(0.08), in: RoundedRectangle(cornerRadius: 14))
+        }.buttonStyle(.plain).accessibilityAddTraits(kind == value ? [.isSelected] : [])
+    }
+    private var deadlineStages: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Label("마감 준비 단계 · Plus", systemImage: "checklist").font(.headline)
+            Text("제안을 넣은 뒤 필요한 단계와 날짜만 남겨요. 저장 전까지 알림을 예약하지 않습니다.").font(.footnote).foregroundStyle(.secondary)
+            ForEach(DeadlineTemplate.allCases) { template in
+                Button("\(template.rawValue) 단계 제안") {
+                    let task = PreparationTask(id: taskID, selection: planner.settings.planningKey, title: title, date: draft.date, kind: .deadline)
+                    stages = template.stages(for: task)
+                }.buttonStyle(SchoolSecondaryButtonStyle())
+            }
+            ForEach($stages) { $stage in
+                VStack(alignment: .leading, spacing: 12) {
+                    TextField("준비 단계", text: $stage.title).modifier(SchoolField())
+                    SchoolDateButton(day: $stage.date, label: "준비할 날짜", accessibilityIdentifier: "stage-date")
+                    Toggle("이 단계 알림", isOn: Binding(get: { stage.reminder != nil }, set: { enabled in
+                        stage.reminder = enabled ? Date().addingTimeInterval(3600) : nil
+                    }))
+                    if stage.reminder != nil {
+                        SchoolReminderEditor(date: Binding(get: { stage.reminder ?? Date() }, set: { stage.reminder = $0 }))
+                    }
+                    Button("단계 삭제", role: .destructive) { stages.removeAll { $0.id == stage.id } }.frame(minHeight: 44)
+                }.padding(12).background(SchoolDesign.canvas, in: RoundedRectangle(cornerRadius: 16))
+            }
+        }.modifier(SchoolCard())
     }
     private var quickItems: some View {
         LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: dynamicTypeSize.isAccessibilitySize ? 1 : 2), spacing: 10) {
@@ -479,7 +546,7 @@ private struct PreparationEditor: View {
                     Text(item).frame(maxWidth: .infinity, minHeight: 44)
                         .fixedSize(horizontal: false, vertical: true)
                 }
-                .buttonStyle(.bordered)
+                .buttonStyle(SchoolSecondaryButtonStyle())
             }
         }
     }
@@ -492,15 +559,23 @@ private struct PreparationEditor: View {
             else {
                 let title = title.trimmingCharacters(in: .whitespacesAndNewlines)
                 guard !title.isEmpty else { throw SchoolError.message("챙길 것 또는 마감 제목을 입력해 주세요.") }
-                if remind {
+                let activeStages = kind == .deadline ? stages : []
+                let oldStages = planner.plan.stages.filter { $0.taskID == taskID }
+                if !planner.plusEnabled && ((!activeStages.isEmpty && activeStages != oldStages) || (remind && !extraReminders.isEmpty && extraReminders != (draft.task?.extraReminders ?? []))) { throw PlannerAccessError.plusRequired }
+                let task = PreparationTask(id: taskID, selection: planner.settings.planningKey, title: title, date: draft.date, subject: draft.subject, kind: kind, reminder: remind ? reminder : nil, extraReminders: remind ? extraReminders : [])
+                let pending = PreparationPlan(tasks: [task], completed: planner.plan.completed, stages: activeStages).notices(
+                    selection: planner.settings.planningKey, cache: nil, plus: planner.plusEnabled,
+                    after: Date(), plusUntil: PlusStore.shared.validUntil, limit: 1)
+                if !pending.isEmpty {
                     guard try await PreparationNotifications.shared.authorize() else {
                         throw SchoolError.message("알림이 꺼져 있어요. iPhone 설정에서 허용하거나 알림을 끄고 저장해 주세요.")
                     }
                 }
-                try planner.addTask(PreparationTask(selection: planner.settings.planningKey, title: title, date: draft.date, subject: draft.subject, kind: kind, reminder: remind ? reminder : nil))
+                try planner.addTask(task, stages: activeStages)
             }
             dismiss()
-        } catch { self.error = error.localizedDescription }
+        } catch is PlannerAccessError { showingPlus = true }
+        catch { self.error = error.localizedDescription }
     }
 }
 
@@ -512,39 +587,39 @@ private struct LessonCorrectionEditor: View {
     @State private var error: String?
     var body: some View {
         NavigationStack {
-            Form {
-                Section {
-                    Text(SchoolCalendar.label(correction.date))
+            SchoolEditorPage {
+                VStack(alignment: .leading, spacing: 18) {
+                    Label(SchoolCalendar.label(correction.date), systemImage: "calendar").font(.headline)
                     if fixedPeriod { Text("\(correction.period)교시") }
                     else {
                         Stepper("\(correction.period)교시", value: Binding(get: { correction.period }, set: {
                             correction = LessonCorrection(selection: correction.selection, date: correction.date, period: $0, subject: correction.subject, room: correction.room)
                         }), in: 1...20)
                     }
-                    TextField("실제 수업 과목", text: $correction.subject)
-                    TextField("교실 (선택)", text: $correction.room)
-                } footer: {
-                    Text("이 날짜·교시에만 적용합니다. 학교의 원본 자료는 바꾸지 않아요. 직접 수정한 과목으로 준비물을 연결할 수 있습니다.\n\n내 수정은 앱과 위젯에 적용해요. Siri·읽기·공유는 학교 원본 자료를 사용합니다.")
-                }
+                    TextField("실제 수업 과목", text: $correction.subject).modifier(SchoolField())
+                    TextField("교실 (선택)", text: $correction.room).modifier(SchoolField())
+                }.modifier(SchoolCard())
+                Text("이 날짜·교시에만 적용합니다. 학교의 원본 자료는 바꾸지 않아요. 직접 수정한 과목으로 준비물을 연결할 수 있습니다.\n\n내 수정은 앱과 위젯에 적용해요. Siri·읽기·공유는 학교 원본 자료를 사용합니다.")
+                    .font(.footnote).foregroundStyle(.secondary).modifier(SchoolCard())
                 if planner.correction(on: correction.date, period: correction.period) != nil {
-                    Section {
-                        Button("학교 자료로 되돌리기", role: .destructive) {
-                            do { try planner.removeCorrection(correction); dismiss() } catch { self.error = error.localizedDescription }
-                        }
-                    }
+                    Button("학교 자료로 되돌리기", role: .destructive) {
+                        do { try planner.removeCorrection(correction); dismiss() } catch { self.error = error.localizedDescription }
+                    }.frame(minHeight: 44)
                 }
-                if let error { Section { Text(error).foregroundStyle(.red) } }
+                if let error { Text(error).foregroundStyle(.red) }
+                Button("이 수업으로 적용", action: apply).buttonStyle(SchoolPrimaryButtonStyle()).disabled(planner.storageBlocked)
             }
             .navigationTitle("내 수업 수정").navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("취소") { dismiss() } }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("적용") {
-                        correction.subject = PreparationPlan.subjectKey(correction.subject)
-                        do { try planner.correct(correction); dismiss() } catch { self.error = error.localizedDescription }
-                    }.disabled(planner.storageBlocked)
+                    Button("적용", action: apply).disabled(planner.storageBlocked)
                 }
             }
         }
+    }
+    private func apply() {
+        correction.subject = PreparationPlan.subjectKey(correction.subject)
+        do { try planner.correct(correction); dismiss() } catch { self.error = error.localizedDescription }
     }
 }
