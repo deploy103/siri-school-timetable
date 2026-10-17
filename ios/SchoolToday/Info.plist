@@ -12,6 +12,10 @@
   <key>CFBundleVersion</key><string>$(CURRENT_PROJECT_VERSION)</string>
   <key>LSRequiresIPhoneOS</key><true/>
   <key>LSApplicationQueriesSchemes</key><array><string>shortcuts</string></array>
+  <key>CFBundleURLTypes</key><array><dict>
+    <key>CFBundleURLName</key><string>com.deploy103.schooltoday</string>
+    <key>CFBundleURLSchemes</key><array><string>schooltoday</string></array>
+  </dict></array>
   <key>UILaunchScreen</key><dict/>
   <key>UISupportedInterfaceOrientations</key><array><string>UIInterfaceOrientationPortrait</string></array>
   <key>SchoolAPIBaseURL</key><string>$(SCHOOL_API_BASE_URL)</string>

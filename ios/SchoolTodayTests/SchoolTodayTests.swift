@@ -9,6 +9,199 @@ final class SchoolTodayTests: XCTestCase {
         )
     }
 
+    func testCalendarRangesUseKoreanDaysAndMondayWeeks() throws {
+        let beforeMidnight = try XCTUnwrap(ISO8601DateFormatter().date(from: "2024-02-29T14:59:59Z"))
+        XCTAssertEqual(SchoolCalendar.key(beforeMidnight), "2024-02-29")
+        XCTAssertEqual(SchoolCalendar.key(beforeMidnight.addingTimeInterval(1)), "2024-03-01")
+        XCTAssertEqual(SchoolCalendar.week(containing: "2024-03-03"), ["2024-02-26", "2024-02-27", "2024-02-28", "2024-02-29", "2024-03-01", "2024-03-02", "2024-03-03"])
+        XCTAssertEqual(SchoolCalendar.range(from: "2024-12-31", to: "2025-01-01"), ["2024-12-31", "2025-01-01"])
+        XCTAssertEqual(SchoolCalendar.range(from: "2024-02-29", to: "2024-03-06")?.count, 7)
+        for invalid in ["2023-02-29", "2024-04-31", "2024-00-10", "2024-1-1", "2024-13-01", "not-a-date"] { XCTAssertNil(SchoolCalendar.date(invalid), invalid) }
+        XCTAssertNil(SchoolCalendar.range(from: "2024-02-29", to: "2024-03-07"))
+        XCTAssertNil(SchoolCalendar.range(from: "2024-03-01", to: "2024-02-29"))
+    }
+
+    func testAutomaticPreparationRecomputesWithoutDuplicatingOrCompletingOtherDates() throws {
+        let selection = settings.planningKey
+        let rule = PreparationRule(selection: selection, subject: "체육", items: ["체육복", " 물통 ", "체육복"])
+        let other = PreparationRule(selection: selection, subject: "실습", items: ["노트북"])
+        var plan = PreparationPlan(rules: [rule, other], tasks: [PreparationTask(selection: selection, title: "동의서", date: "2024-03-05")])
+        let lessons = [Timetable.Lesson(period: 2, subject: "체육", ambiguous: nil), Timetable.Lesson(period: 6, subject: "체육", ambiguous: nil), Timetable.Lesson(period: 7, subject: "실습", ambiguous: nil)]
+        let first = plan.occurrences(on: "2024-03-05", selection: selection, lessons: lessons)
+        XCTAssertEqual(first.map(\.title), ["체육복", "물통", "동의서"])
+        plan.toggle(first[0])
+        XCTAssertTrue(plan.occurrences(on: "2024-03-05", selection: selection, lessons: lessons)[0].completed)
+        XCTAssertFalse(plan.occurrences(on: "2024-03-12", selection: selection, lessons: lessons)[0].completed)
+        XCTAssertEqual(plan.occurrences(on: "2024-03-05", selection: selection, lessons: []).map(\.title), ["동의서"])
+        XCTAssertEqual(plan.occurrences(on: "2024-03-05", selection: selection, lessons: nil).map(\.title), ["동의서"])
+        XCTAssertEqual(plan.occurrences(on: "2024-03-05", selection: "other class", lessons: lessons), [])
+        XCTAssertEqual(plan.occurrences(on: "2024-03-05", selection: selection, lessons: [Timetable.Lesson(period: 1, subject: "체육", ambiguous: true)]).map(\.title), ["동의서"])
+        XCTAssertEqual(plan.occurrences(on: "2024-03-05", selection: selection, lessons: lessons, automaticLimit: 2).map(\.title), ["체육복", "물통", "노트북", "동의서"])
+        XCTAssertEqual(plan.rules.count, 2, "Losing extra automation must not erase records")
+    }
+
+    @MainActor
+    func testPlannerPersistsRulesAndDatedCompletionAndKeepsFailedRefreshSeparate() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let api = try SchoolAPI(server: "https://fixture.invalid", session: PreviewTransport.session)
+        let planner = PlannerStore(settings: settings, api: api, mode: "mock", directory: directory)
+        await planner.refresh(containing: "2024-03-05")
+        XCTAssertNil(planner.timetableError)
+        XCTAssertEqual(planner.timetable(on: "2024-03-05")?.date, "2024-03-05")
+        XCTAssertEqual(planner.meals(on: "2024-03-05")?.meals.first?.dishes, ["쌀밥", "계란국 (1)"])
+        try planner.addRule(subject: "수학", items: ["교재", "교재"])
+        XCTAssertThrowsError(try planner.addRule(subject: "체육", items: ["체육복"]))
+        try planner.addTask(PreparationTask(selection: settings.planningKey, title: "동의서", date: "2024-03-05"))
+        XCTAssertEqual(planner.occurrences(on: "2024-03-05").map(\.title), ["교재", "동의서"])
+        planner.toggle(planner.occurrences(on: "2024-03-05")[0])
+        let restored = PlannerStore(settings: settings, api: api, mode: "mock", directory: directory)
+        XCTAssertTrue(restored.occurrences(on: "2024-03-05")[0].completed)
+        XCTAssertFalse(restored.occurrences(on: "2024-03-06")[0].completed)
+        try restored.addRule(subject: "수학", items: ["교재", "연필"])
+        XCTAssertEqual(restored.rules.count, 1)
+        XCTAssertEqual(restored.occurrences(on: "2024-03-05").map(\.title), ["교재", "연필", "동의서"])
+        let otherSettings = SchoolSettings(school: settings.school, schoolClass: SchoolClass(grade: 2, className: "9", department: nil))
+        let otherClass = PlannerStore(settings: otherSettings, api: api, mode: "mock", directory: directory)
+        XCTAssertTrue(otherClass.tasks.isEmpty)
+        XCTAssertNil(otherClass.timetable(on: "2024-03-05"))
+        let wrongOrigin = PlannerStore(settings: settings, api: try SchoolAPI(server: "https://controlled.invalid", session: ControlledTransport.session), mode: "mock", directory: directory)
+        XCTAssertNil(wrongOrigin.timetable(on: "2024-03-05"))
+        var failTimetable = false
+        ControlledTransport.onStart = { transport in
+            let dates = ["2024-03-04", "2024-03-05", "2024-03-06", "2024-03-07", "2024-03-08", "2024-03-09", "2024-03-10"]
+            if transport.request.url?.path == "/api/timetable/range", failTimetable {
+                transport.respond(body: Data(#"{"error":{"message":"학교 서비스 점검 중"}}"#.utf8), contentType: "application/json", status: 503)
+            } else if transport.request.url?.path == "/api/timetable/range" {
+                let value = SchoolRange(from: "2024-03-04", to: "2024-03-10", days: dates.map { Timetable(date: $0, lessons: [Timetable.Lesson(period: 2, subject: "음악", ambiguous: nil)]) })
+                transport.respond(body: try! JSONEncoder().encode(value), contentType: "application/json")
+            } else {
+                let value = SchoolRange(from: "2024-03-04", to: "2024-03-10", days: dates.map { Meals(date: $0, meals: []) })
+                transport.respond(body: try! JSONEncoder().encode(value), contentType: "application/json")
+            }
+        }
+        defer { ControlledTransport.onStart = nil }
+        let failedAPI = try SchoolAPI(server: "https://controlled.invalid", session: ControlledTransport.session)
+        let offline = PlannerStore(settings: settings, api: failedAPI, mode: "mock", directory: directory)
+        await offline.refresh(containing: "2024-03-05")
+        let oldChecked = offline.cache.timetableCheckedAt
+        XCTAssertEqual(offline.timetable(on: "2024-03-05")?.lessons.first?.subject, "음악")
+        failTimetable = true
+        await offline.refresh(containing: "2024-03-05")
+        XCTAssertEqual(offline.timetableError, "학교 서비스 점검 중")
+        XCTAssertNil(offline.mealError)
+        XCTAssertEqual(offline.cache.timetableCheckedAt, oldChecked)
+        XCTAssertEqual(offline.timetable(on: "2024-03-05")?.lessons.first?.subject, "음악")
+        XCTAssertNil(offline.timetable(on: "2024-03-11"))
+        let correction = LessonCorrection(selection: settings.planningKey, date: "2024-03-05", period: 2, subject: "수학", room: "실습실 A")
+        try offline.correct(correction)
+        XCTAssertEqual(offline.timetable(on: "2024-03-05")?.lessons.first?.subject, "수학")
+        XCTAssertEqual(offline.correction(on: "2024-03-05", period: 2)?.room, "실습실 A")
+        XCTAssertEqual(offline.occurrences(on: "2024-03-05").map(\.title), ["교재", "연필", "동의서"])
+        XCTAssertEqual(offline.timetable(on: "2024-03-06")?.lessons.first?.subject, "음악")
+        try offline.removeCorrection(correction)
+        XCTAssertEqual(offline.timetable(on: "2024-03-05")?.lessons.first?.subject, "음악")
+        XCTAssertEqual(try PlannerArchive(directory: directory).load().rules.first?.items, ["교재", "연필"])
+        try restored.deleteRule(restored.rules[0])
+        XCTAssertEqual(restored.occurrences(on: "2024-03-05").map(\.title), ["동의서"])
+    }
+
+    @MainActor
+    func testPlannerDisplaysReadyDataWhileTheOtherSchoolServiceIsPending() async throws {
+        let dates = ["2024-03-04", "2024-03-05", "2024-03-06", "2024-03-07", "2024-03-08", "2024-03-09", "2024-03-10"]
+        let timetable = try JSONEncoder().encode(SchoolRange(from: dates[0], to: dates[6], days: dates.map {
+            Timetable(date: $0, lessons: [Timetable.Lesson(period: 1, subject: "수학", ambiguous: nil)])
+        }))
+        let meals = try JSONEncoder().encode(SchoolRange(from: dates[0], to: dates[6], days: dates.map {
+            Meals(date: $0, meals: [Meals.Meal(code: "2", name: "중식", dishes: ["쌀밥"], calories: "", nutrition: nil, origin: nil)])
+        }))
+        for slowTimetable in [true, false] {
+            let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+            defer { try? FileManager.default.removeItem(at: directory) }
+            let api = try SchoolAPI(server: "https://controlled.invalid", session: ControlledTransport.session)
+            let planner = PlannerStore(settings: settings, api: api, mode: "live", directory: directory)
+            var slow: ControlledTransport?
+            ControlledTransport.onStart = { transport in
+                Task { @MainActor in
+                    let isTimetable = transport.request.url?.path == "/api/timetable/range"
+                    if isTimetable == slowTimetable { slow = transport }
+                    else { transport.respond(body: isTimetable ? timetable : meals, contentType: "application/json") }
+                }
+            }
+            defer { ControlledTransport.onStart = nil }
+            let lookup = Task { await planner.refresh(containing: dates[1]) }
+            for _ in 0..<100 {
+                let ready = slowTimetable ? planner.meals(on: dates[1]) != nil : planner.timetable(on: dates[1]) != nil
+                if ready && slow != nil { break }
+                try await Task.sleep(nanoseconds: 30_000_000)
+            }
+            if slowTimetable {
+                XCTAssertEqual(planner.meals(on: dates[1])?.meals.first?.dishes, ["쌀밥"])
+                XCTAssertNil(planner.timetable(on: dates[1]))
+            } else {
+                XCTAssertEqual(planner.timetable(on: dates[1])?.lessons.first?.subject, "수학")
+                XCTAssertNil(planner.meals(on: dates[1]))
+            }
+            XCTAssertTrue(planner.loading)
+            if let slow { slow.fail(.timedOut) } else { lookup.cancel() }
+            await lookup.value
+            XCTAssertFalse(planner.loading)
+            XCTAssertNotNil(slowTimetable ? planner.timetableError : planner.mealError)
+            XCTAssertNil(slowTimetable ? planner.mealError : planner.timetableError)
+        }
+    }
+
+    @MainActor
+    func testUnreadablePreparationArchiveIsPreservedAndCannotBeOverwritten() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let url = directory.appendingPathComponent("preparation-v1.json")
+        let original = Data("unreadable but potentially recoverable".utf8)
+        try original.write(to: url)
+        let planner = PlannerStore(settings: settings, api: try SchoolAPI(server: "https://fixture.invalid"), mode: "mock", directory: directory)
+        XCTAssertTrue(planner.storageBlocked)
+        XCTAssertNotNil(planner.recordError)
+        XCTAssertThrowsError(try planner.addTask(PreparationTask(selection: settings.planningKey, title: "체육복", date: "2024-03-05")))
+        XCTAssertEqual(try Data(contentsOf: url), original)
+    }
+
+    func testBasicRemindersExcludeCompletedPastAndOtherClassRecords() throws {
+        let now = try XCTUnwrap(ISO8601DateFormatter().date(from: "2024-03-04T10:00:00Z"))
+        let later = PreparationTask(selection: "my-class", title: "보고서", date: "2024-03-06", kind: .deadline, reminder: now.addingTimeInterval(7200))
+        let earlier = PreparationTask(selection: "my-class", title: "동의서", date: "2024-03-05", reminder: now.addingTimeInterval(3600))
+        let past = PreparationTask(selection: "my-class", title: "지난 알림", date: "2024-03-04", reminder: now)
+        let other = PreparationTask(selection: "other-class", title: "다른 반", date: "2024-03-05", reminder: now.addingTimeInterval(1800))
+        var plan = PreparationPlan(tasks: [later, past, other, earlier])
+        XCTAssertEqual(plan.reminders(selection: "my-class", after: now).map(\.title), ["동의서", "보고서"])
+        let occurrence = try XCTUnwrap(plan.occurrences(on: "2024-03-05", selection: "my-class", lessons: nil).first)
+        plan.toggle(occurrence)
+        XCTAssertEqual(plan.reminders(selection: "my-class", after: now).map(\.title), ["보고서"])
+        XCTAssertEqual(plan.tasks.count, 4)
+        XCTAssertEqual(try JSONDecoder().decode(PreparationPlan.self, from: JSONEncoder().encode(plan)), plan)
+    }
+
+    func testRangeAPIRejectsMissingReorderedDuplicateAndWrongDayResponses() async throws {
+        let api = try SchoolAPI(server: "https://controlled.invalid", session: ControlledTransport.session)
+        defer { ControlledTransport.onStart = nil }
+        let days = ["2024-03-04", "2024-03-05"]
+        for returned in [[], ["2024-03-04"], days.reversed().map { $0 }, ["2024-03-04", "2024-03-04"], ["2024-03-04", "2000-01-01"]] {
+            ControlledTransport.onStart = { transport in
+                if transport.request.url?.path == "/api/timetable/range" {
+                    let result = SchoolRange(from: days[0], to: days[1], days: returned.map { Timetable(date: $0, lessons: []) })
+                    transport.respond(body: try! JSONEncoder().encode(result), contentType: "application/json")
+                } else {
+                    let result = SchoolRange(from: days[0], to: days[1], days: returned.map { Meals(date: $0, meals: []) })
+                    transport.respond(body: try! JSONEncoder().encode(result), contentType: "application/json")
+                }
+            }
+            do { _ = try await api.timetables(settings: settings, from: days[0], to: days[1]); XCTFail("Incomplete/wrong range accepted") }
+            catch { XCTAssertTrue(error.localizedDescription.contains("요청한 날짜")) }
+            do { _ = try await api.meals(settings: settings, from: days[0], to: days[1]); XCTFail("Incomplete/wrong range accepted") }
+            catch { XCTAssertTrue(error.localizedDescription.contains("요청한 날짜")) }
+        }
+    }
+
     func testHTTPSOriginValidation() throws {
         for invalid in ["http://example.com", "https://user:password@example.com", "https://example.com/api", "https://example.com?token=secret", "https://example.com#fragment", ""] {
             XCTAssertThrowsError(try SchoolAPI(server: invalid), invalid)

@@ -52,8 +52,17 @@ final class NWPathMonitor {
     func start(queue: DispatchQueue) {}
     func cancel() {}
 }
+struct WidgetCenter {
+    static let shared = WidgetCenter()
+    func reloadAllTimelines() {}
+}
+actor PreparationNotifications {
+    static let shared = PreparationNotifications()
+    func synchronize(plan: PreparationPlan, selection: String) async -> String? { nil }
+}
 '''
-runner = shims + '\n' + store + '\n' + model + '\nfinal class FoundationTests: XCTestCase {\n'
+planner = (root / 'ios/SchoolToday/PlannerStore.swift').read_text().replace('import Combine', '').replace('import WidgetKit', '')
+runner = shims + '\n' + store + '\n' + model + '\n' + planner + '\nfinal class FoundationTests: XCTestCase {\n'
 runner += settings + '\n\n' + '\n\n'.join(methods) + '\n}\n' + transport
 runner += '\nXCTMain([testCase([\n'
 runner += ',\n'.join('    ("' + name + '", ' + ('asyncTest(FoundationTests.' + name + ')' if 'async throws' in method else 'FoundationTests.' + name) + ')' for name, method in zip(names, methods))
@@ -63,10 +72,10 @@ for name in ['SchoolAPI', 'PreviewTransport']:
     original = (root / ('ios/SchoolToday/' + name + '.swift')).read_text()
     (out / (name + '.swift')).write_text('import FoundationNetworking\n' + original)
 print(f'Foundation-only: {len(names)} unchanged XCTest methods; actual model/API/store bodies.', flush=True)
-print('Observation/NWPathMonitor substitutes; no SwiftUI, iOS SDK, or Siri verification.', flush=True)
+print('Observation/network monitor/widget/notification substitutes; no SwiftUI, OS notifications, WidgetKit, iOS SDK, or Siri verification.', flush=True)
 print('iOS-only test excluded: ' + ', '.join(sorted(excluded)), flush=True)
 PY
 
-"$swiftc" -swift-version 5 -DDEBUG "$root/ios/SchoolToday/Models.swift" \
+"$swiftc" -swift-version 5 -DDEBUG "$root/ios/SchoolToday/Models.swift" "$root/ios/SchoolToday/PlannerModels.swift" \
   "$run/SchoolAPI.swift" "$run/PreviewTransport.swift" "$run/main.swift" -o "$run/tests"
 "$run/tests"

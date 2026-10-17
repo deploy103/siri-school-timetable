@@ -60,6 +60,29 @@ final class PreviewTransport: URLProtocol {
             }
         case "/api/meal/today":
             body = "{\"date\":\"\(date)\",\"meals\":[{\"code\":\"2\",\"name\":\"중식\",\"dishes\":[\"쌀밥\",\"계란국 (1)\"],\"calories\":\"701 Kcal\",\"nutrition\":\"단백질: 25g\",\"origin\":\"쌀: 국내산\"}]}"
+        case "/api/timetable/range", "/api/meal/range":
+            let query = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?.queryItems ?? []
+            let from = query.first { $0.name == "from" }?.value ?? ""
+            let to = query.first { $0.name == "to" }?.value ?? ""
+            let dates = SchoolCalendar.range(from: from, to: to) ?? []
+            if path == "/api/timetable/range", arguments.contains("--fail-timetable") {
+                status = 503
+                body = #"{"error":{"message":"학교 서비스에 연결할 수 없습니다."}}"#
+            } else if path == "/api/timetable/range" {
+                let days = dates.enumerated().map { index, key in
+                    Timetable(date: arguments.contains("--wrong-day") ? "2000-01-01" : key, lessons: arguments.contains("--empty-timetable") ? [] : [
+                        Timetable.Lesson(period: 1, subject: "수학", ambiguous: nil),
+                        Timetable.Lesson(period: 3, subject: index % 2 == 0 ? "체육" : "생명과학", ambiguous: nil),
+                        Timetable.Lesson(period: 4, subject: "수학", ambiguous: nil),
+                    ])
+                }
+                body = String(data: try! JSONEncoder().encode(SchoolRange(from: from, to: to, days: days)), encoding: .utf8)!
+            } else {
+                let days = dates.map { key in
+                    Meals(date: arguments.contains("--wrong-day") ? "2000-01-01" : key, meals: [Meals.Meal(code: "2", name: "중식", dishes: ["쌀밥", "계란국 (1)"], calories: "701 Kcal", nutrition: "단백질: 25g", origin: "쌀: 국내산")])
+                }
+                body = String(data: try! JSONEncoder().encode(SchoolRange(from: from, to: to, days: days)), encoding: .utf8)!
+            }
         case "/api/voice/timetable": body = "오늘 시간표는 1교시 수학, 3교시 생명과학입니다."
         case "/api/voice/meal": body = "오늘 급식은 쌀밥, 계란국입니다."
         default:

@@ -63,8 +63,8 @@ struct SchoolSettings: Codable, Hashable, Sendable {
     }
 }
 
-struct Timetable: Decodable, Sendable {
-    struct Lesson: Decodable, Identifiable, Sendable {
+struct Timetable: Codable, Sendable {
+    struct Lesson: Codable, Identifiable, Sendable {
         let period: Int
         let subject: String
         let ambiguous: Bool?
@@ -87,8 +87,8 @@ struct Timetable: Decodable, Sendable {
     }
 }
 
-struct Meals: Decodable, Sendable {
-    struct Meal: Decodable, Identifiable, Sendable {
+struct Meals: Codable, Sendable {
+    struct Meal: Codable, Identifiable, Sendable {
         let code: String
         let name: String
         let dishes: [String]

@@ -81,15 +81,39 @@ struct SchoolAPI: Sendable {
     }
     func timetable(settings: SchoolSettings) async throws -> Timetable {
         let result: Timetable = try await json(path: "/api/timetable/today", query: settings.timetableQuery)
+        try validate(result)
+        return result
+    }
+    private func validate(_ result: Timetable) throws {
         // Match the server's 1...20, one-row-per-period contract before UI IDs or missing-period ranges use it.
         guard result.lessons.allSatisfy({ (1...20).contains($0.period) }),
               Set(result.lessons.map(\.period)).count == result.lessons.count else {
             throw SchoolError.message("시간표 자료가 올바르지 않아요. 잠시 뒤 다시 시도해 주세요.")
         }
-        return result
     }
     func meals(settings: SchoolSettings) async throws -> Meals {
         try await json(path: "/api/meal/today", query: settings.schoolQuery)
+    }
+    func timetables(settings: SchoolSettings, from: String, to: String) async throws -> [Timetable] {
+        guard let expected = SchoolCalendar.range(from: from, to: to) else {
+            throw SchoolError.message("시간표 조회는 올바른 날짜로 최대 7일까지 가능합니다.")
+        }
+        let result: SchoolRange<Timetable> = try await json(path: "/api/timetable/range", query: settings.timetableQuery + [URLQueryItem(name: "from", value: from), URLQueryItem(name: "to", value: to)])
+        guard result.from == from, result.to == to, result.days.map(\.date) == expected else {
+            throw SchoolError.message("요청한 날짜의 시간표가 아니에요. 다시 확인해 주세요.")
+        }
+        for day in result.days { try validate(day) }
+        return result.days
+    }
+    func meals(settings: SchoolSettings, from: String, to: String) async throws -> [Meals] {
+        guard let expected = SchoolCalendar.range(from: from, to: to) else {
+            throw SchoolError.message("급식 조회는 올바른 날짜로 최대 7일까지 가능합니다.")
+        }
+        let result: SchoolRange<Meals> = try await json(path: "/api/meal/range", query: settings.schoolQuery + [URLQueryItem(name: "from", value: from), URLQueryItem(name: "to", value: to)])
+        guard result.from == from, result.to == to, result.days.map(\.date) == expected else {
+            throw SchoolError.message("요청한 날짜의 급식이 아니에요. 다시 확인해 주세요.")
+        }
+        return result.days
     }
     func speech(settings: SchoolSettings, meal: Bool) async throws -> String {
         let result = try await request(path: meal ? "/api/voice/meal" : "/api/voice/timetable", query: meal ? settings.schoolQuery : settings.timetableQuery, text: true)

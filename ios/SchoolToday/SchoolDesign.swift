@@ -6,7 +6,9 @@ enum SchoolDesign {
         traits.userInterfaceStyle == .dark ? .label : UIColor(red: 0.09, green: 0.13, blue: 0.20, alpha: 1)
     })
     static let hero = Color(red: 8.0 / 255, green: 34.0 / 255, blue: 64.0 / 255)
-    static let blue = Color(red: 0.23, green: 0.38, blue: 0.94)
+    static let blue = Color(uiColor: UIColor { traits in
+        traits.userInterfaceStyle == .dark ? .systemBlue : UIColor(red: 0.23, green: 0.38, blue: 0.94, alpha: 1)
+    })
     static let canvas = Color(uiColor: UIColor { traits in
         traits.userInterfaceStyle == .dark ? .systemGroupedBackground : UIColor(red: 0.97, green: 0.98, blue: 0.99, alpha: 1)
     })
@@ -79,65 +81,5 @@ struct WelcomeView: View {
             }
         }
         .onAppear { withAnimation(.easeOut(duration: reduceMotion ? 0 : 0.35)) { appeared = true } }
-    }
-}
-
-struct SchoolHomeView: View {
-    @EnvironmentObject private var store: SchoolStore
-    @Binding var tab: Int
-    @State private var help = false
-    var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 28) {
-                HStack {
-                    SchoolBrand()
-                    Spacer()
-                    Button { help = true } label: { Image(systemName: "questionmark.circle").font(.title2) }
-                        .frame(minWidth: 44, minHeight: 44)
-                        .accessibilityLabel("Siri 사용 방법").accessibilityIdentifier("siri-help")
-                }
-                VStack(alignment: .leading, spacing: 6) {
-                    Text(store.school?.school.name ?? "").font(.headline)
-                    Text(store.school?.classLabel ?? "").foregroundStyle(.secondary)
-                    DemoNotice()
-                }.modifier(SchoolCard())
-                Text("오늘은 어떤 하루?").font(.title2.bold())
-                VStack(spacing: 14) {
-                    Button { tab = 1 } label: {
-                        HStack(spacing: 16) {
-                            Image(systemName: "calendar").font(.title).accessibilityHidden(true)
-                            VStack(alignment: .leading, spacing: 6) {
-                                Text("시간표 보기").font(.headline)
-                                Text("교시별 수업 확인").font(.subheadline).foregroundStyle(.secondary)
-                            }
-                            Spacer()
-                            Image(systemName: "chevron.right").accessibilityHidden(true)
-                        }.modifier(SchoolCard())
-                    }
-                    Button { tab = 2 } label: {
-                        HStack(spacing: 16) {
-                            Image(systemName: "fork.knife").font(.title).accessibilityHidden(true)
-                            VStack(alignment: .leading, spacing: 6) {
-                                Text("급식 보기").font(.headline)
-                                Text("메뉴·알레르기 확인").font(.subheadline).foregroundStyle(.secondary)
-                            }
-                            Spacer()
-                            Image(systemName: "chevron.right").accessibilityHidden(true)
-                        }.modifier(SchoolCard())
-                    }
-                }.buttonStyle(.plain).foregroundStyle(SchoolDesign.blue)
-                VStack(alignment: .leading, spacing: 16) {
-                    Label("Siri로도 물어보세요", systemImage: "mic.fill").font(.headline)
-                    Text(SchoolShortcuts.timetableExample)
-                        .font(.subheadline).foregroundStyle(.secondary).textSelection(.enabled)
-                    SchoolShortcutsEntry()
-                    NavigationLink("실행이 안 되나요?") { ShortcutCheckView() }
-                        .accessibilityIdentifier("shortcut-check")
-                }.modifier(SchoolCard())
-            }.padding(24)
-        }
-        .background(SchoolDesign.canvas)
-        .toolbar(.hidden, for: .navigationBar)
-        .sheet(isPresented: $help) { NavigationStack { SiriGuideView(onboarding: false) } }
     }
 }

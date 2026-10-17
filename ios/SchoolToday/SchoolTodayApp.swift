@@ -1,9 +1,12 @@
 import SwiftUI
 import Network
 import AppIntents
+import UserNotifications
+import WidgetKit
 
 @main
 struct SchoolTodayApp: App {
+    @UIApplicationDelegateAdaptor(SchoolAppDelegate.self) private var appDelegate
     @StateObject private var store: SchoolStore
     init() {
         #if DEBUG
@@ -11,6 +14,8 @@ struct SchoolTodayApp: App {
             let defaults = UserDefaults(suiteName: "schooltoday.ui-tests")!
             if ProcessInfo.processInfo.arguments.contains("--reset-settings") {
                 defaults.removePersistentDomain(forName: "schooltoday.ui-tests")
+                let directory = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("PlannerUITests", isDirectory: true)
+                try? FileManager.default.removeItem(at: directory)
             }
             let server = ProcessInfo.processInfo.arguments.contains("--missing-server") ? "" : "https://fixture.invalid"
             _store = StateObject(wrappedValue: SchoolStore(defaults: defaults, session: PreviewTransport.session, server: server))
@@ -22,6 +27,24 @@ struct SchoolTodayApp: App {
     var body: some Scene {
         WindowGroup {
             RootView().environmentObject(store)
+        }
+    }
+}
+
+@MainActor
+final class SchoolAppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDelegate {
+    func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil) -> Bool {
+        UNUserNotificationCenter.current().delegate = self
+        return true
+    }
+    nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse) async {
+        let info = response.notification.request.content.userInfo
+        guard let day = info["preparationDate"] as? String, SchoolCalendar.date(day) != nil,
+              let selection = info["selection"] as? String else { return }
+        await MainActor.run {
+            guard SchoolPreferences.readSchool()?.planningKey == selection else { return }
+            UserDefaults.standard.set(day, forKey: "schooltoday.pending-preparation-date")
+            NotificationCenter.default.post(name: .showSchoolPreparation, object: nil)
         }
     }
 }
@@ -46,6 +69,15 @@ final class SchoolStore: ObservableObject {
         school = storedSchool
         onboardingComplete = storedSchool != nil && defaults.bool(forKey: "schooltoday.onboarding.v2")
         if storedSchool == nil { defaults.removeObject(forKey: "schooltoday.onboarding.v2") }
+        // A previously verified origin can open dated local data without a new network handshake.
+        if storedSchool != nil,
+           let candidate = try? SchoolAPI(server: server, session: session),
+           let previous = defaults.string(forKey: SchoolPreferences.serverKey).flatMap({ try? SchoolAPI(server: $0).baseURL }),
+           previous == candidate.baseURL,
+           let previousMode = defaults.string(forKey: "schooltoday.data-mode.v1"), ["live", "mock"].contains(previousMode) {
+            api = candidate
+            mode = previousMode
+        }
         monitor.pathUpdateHandler = { [weak self] path in
             Task { @MainActor in self?.online = path.status == .satisfied }
         }
@@ -63,6 +95,7 @@ final class SchoolStore: ObservableObject {
             .flatMap { try? SchoolAPI(server: $0).baseURL }
         if previous != candidate.baseURL { try saveSchool(nil) }
         defaults.set(candidate.baseURL.absoluteString, forKey: SchoolPreferences.serverKey)
+        defaults.set(health.neis.mode, forKey: "schooltoday.data-mode.v1")
         mode = health.neis.mode
         api = candidate
     }
@@ -72,6 +105,10 @@ final class SchoolStore: ObservableObject {
         if settings == nil {
             onboardingComplete = false
             defaults.removeObject(forKey: "schooltoday.onboarding.v2")
+            SchoolWidgetCache.write(nil)
+            WidgetCenter.shared.reloadAllTimelines()
+            UserDefaults.standard.removeObject(forKey: "schooltoday.pending-preparation-date")
+            Task { _ = await PreparationNotifications.shared.synchronize(plan: PreparationPlan(), selection: "") }
         }
     }
     func finishOnboarding() {
@@ -84,27 +121,15 @@ struct RootView: View {
     @EnvironmentObject private var store: SchoolStore
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var started = false
-    @State private var tab = 0
     var body: some View {
         Group {
             if !store.onboardingComplete && !started {
                 WelcomeView { started = true }
             } else if let api = store.api {
                 if let school = store.school {
-                    if !store.onboardingComplete {
-                        NavigationStack { SiriGuideView(onboarding: true) }
-                    } else {
-                        TabView(selection: $tab) {
-                            NavigationStack { SchoolHomeView(tab: $tab) }
-                                .tabItem { Label("홈", systemImage: "house") }.tag(0)
-                            NavigationStack { TodayView(kind: .timetable, settings: school, api: api) }
-                                .tabItem { Label("시간표", systemImage: "calendar") }.tag(1)
-                            NavigationStack { TodayView(kind: .meals, settings: school, api: api) }
-                                .tabItem { Label("급식", systemImage: "fork.knife") }.tag(2)
-                            NavigationStack { SettingsView() }
-                                .tabItem { Label("설정", systemImage: "gearshape") }.tag(3)
-                        }
-                    }
+                    SchoolDashboard(settings: school, api: api, mode: store.mode, directory: plannerDirectory)
+                        .id("\(school.planningKey):\(api.baseURL):\(store.mode)")
+                        .onAppear { if !store.onboardingComplete { store.finishOnboarding() } }
                 } else {
                     NavigationStack { SchoolSearchView(api: api) }
                 }
@@ -116,10 +141,20 @@ struct RootView: View {
         .foregroundStyle(SchoolDesign.ink)
         .animation(.easeInOut(duration: reduceMotion ? 0.12 : 0.28), value: started)
         .animation(.easeInOut(duration: reduceMotion ? 0.12 : 0.28), value: store.school)
+        .task {
+            if store.api != nil { try? await store.connect() }
+        }
         .onChange(of: store.school) { _, school in
-            tab = 0
             if school == nil { started = false }
         }
+    }
+    private var plannerDirectory: URL? {
+        #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("--ui-testing") {
+            return FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("PlannerUITests", isDirectory: true)
+        }
+        #endif
+        return nil
     }
 }
 
@@ -250,7 +285,9 @@ struct SettingsView: View {
                 VStack(alignment: .leading, spacing: 16) {
                     Text("데이터와 개인정보").font(.headline)
                     DemoNotice()
-                    Text("학교 설정은 이 기기에 저장해요.")
+                    Text("학교 설정과 개인 준비 기록은 이 기기에 저장해요. 학교를 바꿔도 이전 준비 기록은 지우지 않습니다.")
+                        .font(.footnote).foregroundStyle(.secondary)
+                    Text("구매 복원은 개인 기록 복원이 아닙니다. 앱 삭제·기기 변경에 대비한 동기화는 아직 제공하지 않아요.")
                         .font(.footnote).foregroundStyle(.secondary)
                     DisclosureGroup("개인정보 안내") {
                         Text("인터넷 연결이 필요해요. NEIS 키·Apple 로그인 정보는 앱에 저장하지 않아요.")
