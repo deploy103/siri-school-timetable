@@ -145,12 +145,16 @@ GET /api/schools?name=학교명
 GET /api/schools?officeCode=B10&name=학교명
 GET /api/classes?officeCode=B10&schoolCode=학교코드
 GET /api/timetable/today?officeCode=...&schoolCode=...&kind=...&grade=2&className=1
+GET /api/timetable/range?officeCode=...&schoolCode=...&kind=...&grade=2&className=1&from=2026-10-12&to=2026-10-18
 GET /api/voice/timetable?officeCode=...&schoolCode=...&kind=...&grade=2&className=1
 GET /api/meal/today?officeCode=...&schoolCode=...
+GET /api/meal/range?officeCode=...&schoolCode=...&from=2026-10-12&to=2026-10-18
 GET /api/voice/meal?officeCode=...&schoolCode=...
 ```
 
 학교 설정 화면에서 17개 시도교육청 또는 전체 지역을 선택한 뒤 학교명을 검색합니다. 학교 선택 후에는 NEIS가 제공한 학과·학년·반만 선택할 수 있습니다. 특성화고는 `DDDEP_NM`까지 시간표 요청에 전달해 서로 다른 학과의 같은 학년·반이 섞이지 않습니다. 급식은 같은 설정의 교육청·학교 코드만 재사용하므로 다시 설정할 필요가 없습니다. 학교·시간표·급식 API는 JSON을 반환하고, 음성 API는 단축어가 그대로 말할 수 있는 `text/plain; charset=utf-8` 문장을 반환합니다.
+
+`range`는 시작·종료일을 포함해 1~7일을 조회합니다. 두 날짜는 필수 `YYYY-MM-DD`이며, 존재하지 않는 날짜·역순·8일 이상은 외부 조회 전에 400으로 거절합니다. 응답은 `{ from, to, days }`이고 `days`는 각 날짜의 기존 일별 JSON을 날짜순으로 담습니다. 정상적인 빈 날도 보존하지만 하루라도 조회에 실패하면 일부 자료를 성공으로 반환하지 않습니다. 기존 일별 캐시를 재사용하며 NEIS 요청은 순차 처리합니다. 이 API 추가는 네이티브 앱의 주간 조회용이며 기존 웹 화면의 조회 범위를 바꾸지는 않습니다.
 
 NEIS가 1·2교시 행 없이 3교시부터 반환하면 화면도 3교시부터 표시하고 그 이유를 안내합니다. 서로 다른 과목이 같은 교시에 남는 경우 화면에는 후보를 표시하되 Siri는 긴 후보 목록 대신 `선택 수업`이라고 짧게 읽습니다.
 
