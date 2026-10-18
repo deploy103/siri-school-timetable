@@ -1,0 +1,62 @@
+{
+  "identifier" : "A1030001",
+  "nonRenewingSubscriptions" : [],
+  "products" : [],
+  "settings" : {
+    "_askToBuyEnabled" : false,
+    "_locale" : "en_US",
+    "_storefront" : "USA"
+  },
+  "subscriptionGroups" : [
+    {
+      "id" : "A1030002",
+      "localizations" : [],
+      "name" : "SchoolToday Plus",
+      "subscriptions" : [
+        {
+          "adHocOffers" : [],
+          "codeOffers" : [],
+          "displayPrice" : "1.90",
+          "familyShareable" : false,
+          "groupNumber" : 1,
+          "internalID" : "A1030003",
+          "introductoryOffer" : null,
+          "localizations" : [
+            {
+              "description" : "SchoolToday Plus를 매월 이용하세요.",
+              "displayName" : "Plus 월간",
+              "locale" : "ko_KR"
+            }
+          ],
+          "productID" : "com.deploy103.schooltoday.plus.monthly",
+          "recurringSubscriptionPeriod" : "P1M",
+          "referenceName" : "SchoolToday Plus Monthly",
+          "subscriptionGroupID" : "A1030002",
+          "type" : "RecurringSubscription"
+        },
+        {
+          "adHocOffers" : [],
+          "codeOffers" : [],
+          "displayPrice" : "14.90",
+          "familyShareable" : false,
+          "groupNumber" : 1,
+          "internalID" : "A1030004",
+          "introductoryOffer" : null,
+          "localizations" : [
+            {
+              "description" : "SchoolToday Plus를 매년 이용하세요.",
+              "displayName" : "Plus 연간",
+              "locale" : "ko_KR"
+            }
+          ],
+          "productID" : "com.deploy103.schooltoday.plus.yearly",
+          "recurringSubscriptionPeriod" : "P1Y",
+          "referenceName" : "SchoolToday Plus Yearly",
+          "subscriptionGroupID" : "A1030002",
+          "type" : "RecurringSubscription"
+        }
+      ]
+    }
+  ],
+  "version" : { "major" : 2, "minor" : 0 }
+}
