@@ -4,6 +4,9 @@ export function timetableToSpeech(timetable: TimetableResponse): string {
   if (timetable.lessons.length === 0) {
     return "오늘 등록된 시간표가 없습니다. 주말이나 휴업일이거나 학교에서 아직 시간표를 제공하지 않았을 수 있습니다.";
   }
+  if (timetable.lessons.every((lesson) => !lesson.ambiguous && lesson.subject.trim() === "토요휴업일")) {
+    return "오늘 시간표는 토요휴업일로 등록되어 있습니다.";
+  }
   const lessons = timetable.lessons
     .slice()
     .sort((left, right) => left.period - right.period)

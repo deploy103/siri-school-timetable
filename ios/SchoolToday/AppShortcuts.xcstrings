@@ -1,0 +1,46 @@
+{
+  "sourceLanguage" : "ko",
+  "strings" : {
+    "${applicationName} 급식 알려줘" : {
+      "localizations" : {
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "${applicationName} 급식 알려줘"
+          }
+        }
+      }
+    },
+    "${applicationName} 시간표 알려줘" : {
+      "localizations" : {
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "${applicationName} 시간표 알려줘"
+          }
+        }
+      }
+    },
+    "${applicationName} 오늘 급식 알려줘" : {
+      "localizations" : {
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "${applicationName} 오늘 급식 알려줘"
+          }
+        }
+      }
+    },
+    "${applicationName} 오늘 시간표 알려줘" : {
+      "localizations" : {
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "${applicationName} 오늘 시간표 알려줘"
+          }
+        }
+      }
+    }
+  },
+  "version" : "1.0"
+}

@@ -443,12 +443,10 @@ export class NeisClient {
     this.assertConfigured();
     const parameters: Record<string, string> = {
       SCHUL_NM: name,
-      pIndex: "1",
-      pSize: "100",
     };
     if (officeCode) parameters.ATPT_OFCDC_SC_CODE = officeCode;
-    const payload = await this.request("schoolInfo", parameters);
-    return parseSchools(payload);
+    const rows = await this.requestAllRows("schoolInfo", parameters, 100);
+    return parseSchools({ schoolInfo: [{ row: rows }] });
   }
 
   async getSchoolClasses(
@@ -474,14 +472,12 @@ export class NeisClient {
       );
     }
     this.assertConfigured();
-    const payload = await this.request("classInfo", {
+    const rows = await this.requestAllRows("classInfo", {
       ATPT_OFCDC_SC_CODE: officeCode,
       SD_SCHUL_CODE: schoolCode,
       AY: String(academicYear),
-      pIndex: "1",
-      pSize: "1000",
     });
-    return parseSchoolClasses(payload);
+    return parseSchoolClasses({ classInfo: [{ row: rows }] });
   }
 
   async getTodayTimetable(query: TimetableQuery, date: string): Promise<TimetableResponse> {
@@ -678,8 +674,8 @@ export class NeisClient {
   private async requestAllRows(
     dataset: string,
     parameters: Readonly<Record<string, string>>,
+    pageSize = 1_000,
   ): Promise<JsonRecord[]> {
-    const pageSize = 1_000;
     const first = await this.request(dataset, {
       ...parameters,
       pIndex: "1",

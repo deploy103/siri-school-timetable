@@ -30,6 +30,8 @@
 
 전역 보안 헤더는 frame embedding, MIME sniffing, 불필요한 브라우저 권한과 임의 외부 연결을 제한한다. CORS 허용 헤더를 추가하지 않아 브라우저의 same-origin 정책을 유지한다. Compose 컨테이너는 비루트, read-only root filesystem, capability 제거, `no-new-privileges`로 실행된다.
 
+공개 운영 주소의 HTTPS 강제는 TLS를 종료하는 reverse proxy에서 HTTP→HTTPS 리디렉션과 HSTS로 처리한다. 앱의 CSP에는 `upgrade-insecure-requests`를 넣지 않는다. WebKit은 로컬 HTTP 미리보기의 같은 origin 스크립트까지 HTTPS로 바꾸어 로딩을 실패시키기 때문이다. 앱 리소스는 상대 주소이고 외부 NEIS 호출은 HTTPS로 고정되어 있다. HTTP 로컬 미리보기에서 동작한다고 공개 HTTP 운영이나 Siri 연결까지 안전하다는 뜻은 아니다.
+
 ## 공개 음성 URL
 
 음성 URL은 인증 URL이 아니다. 포함되는 학교 코드·학년·반은 비밀로 취급되지 않지만 개인의 소속 정보가 될 수 있다. 링크를 안 사람은 같은 시간표 문장을 요청할 수 있다. 개인정보나 인증 토큰을 URL에 추가하지 말아야 하며, 서비스는 요청 빈도를 제한한다.

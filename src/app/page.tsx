@@ -5,12 +5,13 @@ import { OnboardingGuide } from "@/components/onboarding-guide";
 import { SchoolSetup } from "@/components/school-setup";
 import { MealView } from "@/components/meal-view";
 import { TimetableView } from "@/components/timetable-view";
+import { StorageNotice } from "@/components/storage-notice";
 import { useOnboarding } from "@/hooks/use-onboarding";
 import { useSchoolSettings } from "@/hooks/use-school-settings";
 import type { SchoolSettings } from "@/types/client";
 
 export default function HomePage() {
-  const { settings, isRestoring, saveSettings } = useSchoolSettings();
+  const { settings, isRestoring, saveSettings, storageUnavailable } = useSchoolSettings();
   const onboarding = useOnboarding();
   const [isEditing, setIsEditing] = useState(false);
   const [activeView, setActiveView] = useState<"timetable" | "meal">("timetable");
@@ -34,38 +35,47 @@ export default function HomePage() {
 
   if (!settings || isEditing) {
     return (
-      <SchoolSetup
-        initialSettings={settings}
-        onSave={save}
-        onCancel={settings ? () => setIsEditing(false) : undefined}
-        onboardingBanner={
-          !onboarding.isRestoring && !onboarding.dismissed
-            ? <OnboardingGuide onDismiss={onboarding.dismiss} />
-            : undefined
-        }
-      />
+      <>
+        <StorageNotice unavailable={storageUnavailable} />
+        <SchoolSetup
+          initialSettings={settings}
+          onSave={save}
+          onCancel={settings ? () => setIsEditing(false) : undefined}
+          onboardingBanner={
+            !onboarding.isRestoring && !onboarding.dismissed
+              ? <OnboardingGuide onDismiss={onboarding.dismiss} />
+              : undefined
+          }
+        />
+      </>
     );
   }
 
   if (activeView === "meal") {
     return (
-      <MealView
-        settings={settings}
-        onChangeSettings={() => setIsEditing(true)}
-        onShowTimetable={() => setActiveView("timetable")}
-        onShowGuide={showGuideAgain}
-      />
+      <>
+        <StorageNotice unavailable={storageUnavailable} />
+        <MealView
+          settings={settings}
+          onChangeSettings={() => setIsEditing(true)}
+          onShowTimetable={() => setActiveView("timetable")}
+          onShowGuide={showGuideAgain}
+        />
+      </>
     );
   }
 
   return (
-    <TimetableView
-      settings={settings}
-      onChangeSettings={() => setIsEditing(true)}
-      onShowMeal={() => setActiveView("meal")}
-      onShowGuide={showGuideAgain}
-      openSiriOnMount={openSiriOnMount}
-      onSiriAutoOpened={() => setOpenSiriOnMount(false)}
-    />
+    <>
+      <StorageNotice unavailable={storageUnavailable} />
+      <TimetableView
+        settings={settings}
+        onChangeSettings={() => setIsEditing(true)}
+        onShowMeal={() => setActiveView("meal")}
+        onShowGuide={showGuideAgain}
+        openSiriOnMount={openSiriOnMount}
+        onSiriAutoOpened={() => setOpenSiriOnMount(false)}
+      />
+    </>
   );
 }

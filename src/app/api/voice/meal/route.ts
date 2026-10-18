@@ -1,7 +1,7 @@
 import { SECURITY_HEADERS, logServerError } from "@/lib/api-response";
 import { getKstDate } from "@/lib/date";
 import { safeError } from "@/lib/errors";
-import { getTodayMeals } from "@/lib/neis";
+import { getNeisRuntimeStatus, getTodayMeals } from "@/lib/neis";
 import { clientIdentifier, MemoryRateLimiter } from "@/lib/rate-limit";
 import { mealQuerySchema, searchParamsToRecord } from "@/lib/schemas";
 import { mealToSpeech, mealVoiceErrorMessage } from "@/lib/voice";
@@ -18,6 +18,7 @@ function textResponse(message: string, status = 200, retryAfter?: number): Respo
     "Cache-Control": "no-store",
   });
   if (retryAfter !== undefined) headers.set("Retry-After", String(retryAfter));
+  if (status === 200) headers.set("X-School-Data-Mode", getNeisRuntimeStatus().mode);
   return new Response(message, { status, headers });
 }
 
