@@ -333,7 +333,10 @@ final class SchoolTodayUITests: XCTestCase {
         let exportName = app.textFields.matching(NSPredicate(format: "value BEGINSWITH %@", "school-preparation-backup")).firstMatch
         XCTAssertTrue(exportName.waitForExistence(timeout: 10), app.debugDescription)
         capture("planner-backup-export", app: app)
-        app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.08))
+        // The picker can start below the app's top edge; drag its own header, not the obscured app.
+        let pickerBar = app.navigationBars["FullDocumentManagerViewControllerNavigationBar"]
+        XCTAssertTrue(pickerBar.waitForExistence(timeout: 5), app.debugDescription)
+        pickerBar.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.2))
             .press(forDuration: 0.1, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.75)))
         let dismissed = XCTNSPredicateExpectation(predicate: NSPredicate(format: "hittable == true"),
                                                 object: app.buttons["백업 내보내기"])
