@@ -39,7 +39,7 @@ jobs:
 
   ios:
     runs-on: macos-15
-    timeout-minutes: 30
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
       - name: Install verified XcodeGen 2.46.0
@@ -49,12 +49,18 @@ jobs:
           unzip -q "$RUNNER_TEMP/xcodegen.zip" -d "$RUNNER_TEMP/xcodegen-tool"
           echo "$RUNNER_TEMP/xcodegen-tool/xcodegen/bin" >> "$GITHUB_PATH"
       - run: xcodegen generate --spec ios/project.yml --project ios
+      - name: Unsigned iPhone Release build
+        run: |
+          xcodebuild -project ios/SchoolToday.xcodeproj -scheme SchoolToday \
+            -configuration Release -destination 'generic/platform=iOS' \
+            -derivedDataPath "$RUNNER_TEMP/ios-device" CODE_SIGNING_ALLOWED=NO build
       - name: Native unit and UI tests
         run: |
           device_id=$(xcrun simctl list devices available -j | python3 -c 'import json, sys; print(next(device["udid"] for devices in json.load(sys.stdin)["devices"].values() for device in devices if device["name"].startswith("iPhone")))')
           xcodebuild -project ios/SchoolToday.xcodeproj -scheme SchoolToday \
             -configuration Debug -destination "platform=iOS Simulator,id=$device_id" \
             -destination-timeout 120 -derivedDataPath "$RUNNER_TEMP/ios-build" \
+            -parallel-testing-enabled NO \
             -resultBundlePath "$RUNNER_TEMP/SchoolToday.xcresult" CODE_SIGNING_ALLOWED=NO test
       - name: Local StoreKit subscription lifecycle
         run: |
@@ -64,11 +70,6 @@ jobs:
             -destination-timeout 120 -derivedDataPath "$RUNNER_TEMP/ios-build" \
             -parallel-testing-enabled NO \
             -resultBundlePath "$RUNNER_TEMP/PlusStoreKit.xcresult" CODE_SIGNING_ALLOWED=NO test
-      - name: Unsigned iPhone Release build
-        run: |
-          xcodebuild -project ios/SchoolToday.xcodeproj -scheme SchoolToday \
-            -configuration Release -destination 'generic/platform=iOS' \
-            -derivedDataPath "$RUNNER_TEMP/ios-device" CODE_SIGNING_ALLOWED=NO build
       - name: Export native screenshots
         if: always()
         run: |
