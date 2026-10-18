@@ -329,8 +329,9 @@ final class SchoolTodayUITests: XCTestCase {
         XCTAssertTrue(app.navigationBars["준비 설정"].waitForExistence(timeout: 5))
         tap(app.buttons["백업 내보내기"], in: app)
         // iOS may expose a non-hittable, invisible Cancel in the picker AX tree.
-        // Wait for the visible Save control, then use the standard sheet-dismiss gesture.
-        XCTAssertTrue(app.buttons["저장"].waitForExistence(timeout: 10))
+        // The system action varies by OS and language (Save/Move); verify our export filename instead.
+        let exportName = app.textFields.matching(NSPredicate(format: "value BEGINSWITH %@", "school-preparation-backup")).firstMatch
+        XCTAssertTrue(exportName.waitForExistence(timeout: 10), app.debugDescription)
         capture("planner-backup-export", app: app)
         app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.08))
             .press(forDuration: 0.1, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.75)))
