@@ -94,7 +94,12 @@ struct SiriGuideView: View {
                 if !history.isEmpty {
                     Button(action: back) { Image(systemName: "chevron.left") }
                         .accessibilityLabel("이전 단계").frame(minWidth: 44, minHeight: 44)
-                } else if !onboarding { Button("닫기") { dismiss() } }
+                }
+            }
+            ToolbarItem(placement: .topBarTrailing) {
+                if !onboarding {
+                    Button("닫기") { dismiss() }.accessibilityIdentifier("close-siri-guide")
+                }
             }
             ToolbarItemGroup(placement: .keyboard) {
                 Spacer()
