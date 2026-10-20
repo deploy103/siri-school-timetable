@@ -188,7 +188,9 @@ final class SchoolTodayUITests: XCTestCase {
         }
         capture("native-name-\(kind)-keyboard", app: app)
         tap(app.buttons["입력 완료"], in: app)
-        XCTAssertFalse(app.keyboards.firstMatch.exists)
+        let dismissed = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"),
+                                                object: app.keyboards.firstMatch)
+        XCTAssertEqual(XCTWaiter.wait(for: [dismissed], timeout: 3), .completed)
     }
 
     func testPreparationLinkCompletionDatesAndPersistence() {
