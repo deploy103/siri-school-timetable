@@ -1,3 +1,5 @@
+import { isIP } from "node:net";
+
 interface WindowState {
   count: number;
   resetsAt: number;
@@ -53,6 +55,6 @@ export function clientIdentifier(request: Request): string {
   if (process.env.TRUST_PROXY_HEADERS !== "true") return "untrusted-client";
   const forwarded = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim();
   const candidate = forwarded || request.headers.get("x-real-ip")?.trim();
-  if (!candidate || !/^[0-9A-Fa-f:.]{3,64}$/.test(candidate)) return "unknown-client";
+  if (!candidate || !isIP(candidate)) return "unknown-client";
   return candidate;
 }
