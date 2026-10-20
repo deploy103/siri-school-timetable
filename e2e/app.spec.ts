@@ -79,6 +79,16 @@ test("mobile-first setup, timetable, persistence, and Siri flow", async ({ page 
   await expect(dialog).toBeVisible();
   await expect(dialog.getByLabel("내 시간표 주소")).toHaveValue(/\/api\/voice\/timetable\?.*officeCode=C10/);
   await expect(dialog.getByLabel("내 급식 주소")).toHaveValue(/\/api\/voice\/meal\?.*officeCode=C10/);
+  for (const [label, speech] of [
+    ["내 시간표 주소", "오늘 시간표는 1교시 자료구조"],
+    ["내 급식 주소", "오늘 급식은 쌀밥"],
+  ] as const) {
+    const response = await page.request.get(await dialog.getByLabel(label).inputValue());
+    expect(response.status()).toBe(200);
+    expect(response.headers()["content-type"]).toBe("text/plain; charset=utf-8");
+    expect(response.headers()["x-school-data-mode"]).toBe("mock");
+    expect(await response.text()).toContain(speech);
+  }
   await expect(dialog).toContainText("URL 콘텐츠 가져오기");
   await expect(dialog).toContainText("텍스트 말하기");
   await page.keyboard.press("Escape");
@@ -175,6 +185,10 @@ test("vocational schools keep same-number classes separated by department", asyn
   const autoOpenedDialog = page.getByRole("dialog", { name: "Siri로 학교 정보 듣기" });
   await expect(autoOpenedDialog).toBeVisible();
   await expect(page.getByLabel("내 시간표 주소")).toHaveValue(/department=%EC%BD%98%ED%85%90%EC%B8%A0%EA%B3%BC/);
+  const voice = await page.request.get(await autoOpenedDialog.getByLabel("내 시간표 주소").inputValue());
+  expect(voice.status()).toBe(200);
+  expect(voice.headers()["content-type"]).toBe("text/plain; charset=utf-8");
+  expect(await voice.text()).toContain("오늘 시간표는 1교시 자료구조");
   await page.keyboard.press("Escape");
   await expect(autoOpenedDialog).toBeHidden();
 });
@@ -200,6 +214,10 @@ test("Hansei teacher setup, timetable, persistence, and Siri flow", async ({ pag
   await page.getByRole("button", { name: "Siri 설정" }).click();
   const dialog = page.getByRole("dialog", { name: "교사용 Siri 설정" });
   await expect(dialog.getByLabel("교사용 시간표 주소")).toHaveValue(/\/api\/voice\/teacher-timetable\?p=/);
+  const voice = await page.request.get(await dialog.getByLabel("교사용 시간표 주소").inputValue());
+  expect(voice.status()).toBe(200);
+  expect(voice.headers()["content-type"]).toBe("text/plain; charset=utf-8");
+  expect(await voice.text()).toContain("클보 2학년 1반");
   await expect(dialog).toContainText("시리야, 학교 수업");
   await page.keyboard.press("Escape");
 

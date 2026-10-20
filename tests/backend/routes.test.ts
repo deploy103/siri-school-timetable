@@ -383,4 +383,21 @@ describe("API routes", () => {
     expect(response.status).toBe(429);
     expect(response.headers.get("retry-after")).toBeTruthy();
   });
+
+  it("does not let changing malformed forwarded IPs create fresh rate-limit windows", async () => {
+    vi.stubEnv("NEIS_API_KEY", "");
+    vi.stubEnv("NEIS_MOCK_MODE", "true");
+    vi.stubEnv("TRUST_PROXY_HEADERS", "true");
+    const path = "/api/schools?name=테스트학교";
+    for (let index = 0; index < 60; index += 1) {
+      const response = await schoolsRoute(request(path, `bad${index.toString(16)}`));
+      expect(response.status).toBe(200);
+    }
+    const limited = await schoolsRoute(request(path, "bad3c"));
+    expect(limited.status).toBe(429);
+    expect(Number(limited.headers.get("retry-after"))).toBeGreaterThan(0);
+    for (const ip of ["203.0.113.9", "2001:db8::9"]) {
+      expect((await schoolsRoute(request(path, ip))).status).toBe(200);
+    }
+  });
 });
