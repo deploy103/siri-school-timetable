@@ -86,6 +86,14 @@ struct SiriGuideView: View {
                 removal: .move(edge: forward ? .leading : .trailing).combined(with: .opacity)))
         }
         .background(SchoolDesign.canvas)
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            if nameFocused {
+                Button("입력 완료") { nameFocused = false }
+                    .frame(maxWidth: .infinity, minHeight: 44, alignment: .trailing)
+                    .padding(.horizontal, 24).padding(.vertical, 8)
+                    .background(SchoolDesign.canvas)
+            }
+        }
         .navigationTitle(nameFocused ? "호출 이름" : "Siri 설정").navigationBarTitleDisplayMode(.inline)
         .navigationBarBackButtonHidden(true)
         .toolbar(.visible, for: .navigationBar)
@@ -100,10 +108,6 @@ struct SiriGuideView: View {
                 if !onboarding {
                     Button("닫기") { dismiss() }.accessibilityIdentifier("close-siri-guide")
                 }
-            }
-            ToolbarItemGroup(placement: .keyboard) {
-                Spacer()
-                Button("입력 완료") { nameFocused = false }
             }
         }
         .onAppear {
