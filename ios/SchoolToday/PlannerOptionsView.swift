@@ -245,6 +245,7 @@ struct PlannerOptionsView: View {
     private func readImport(_ result: Result<URL, Error>) {
         do {
             let url = try result.get()
+            preview = nil
             let access = url.startAccessingSecurityScopedResource()
             defer { if access { url.stopAccessingSecurityScopedResource() } }
             let handle = try FileHandle(forReadingFrom: url)
