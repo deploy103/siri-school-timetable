@@ -447,10 +447,13 @@ final class SchoolTodayUITests: XCTestCase {
         XCTAssertTrue(app.navigationBars["준비 설정"].waitForExistence(timeout: 5))
         tap(app.buttons["백업 내보내기"], in: app)
         // Files can omit the filename field in a previously used location.
-        // Check the export action without depending on its localized Save/Move label.
+        // iOS 18 exposes Move without the action identifier used by newer Files versions.
         let pickerBar = app.navigationBars["FullDocumentManagerViewControllerNavigationBar"]
         XCTAssertTrue(pickerBar.waitForExistence(timeout: 10), app.debugDescription)
-        let export = pickerBar.buttons["DOCPicker.actionButton"]
+        let export = pickerBar.buttons.matching(NSPredicate(
+            format: "identifier == %@ OR label IN %@", "DOCPicker.actionButton", ["Move", "Save", "이동", "저장"]
+        )).firstMatch
+        XCTAssertTrue(export.waitForExistence(timeout: 5), app.debugDescription)
         XCTAssertTrue(export.isEnabled)
         XCTAssertTrue(export.isHittable)
         capture("planner-backup-export", app: app)
@@ -721,7 +724,9 @@ final class SchoolTodayUITests: XCTestCase {
         XCTAssertTrue(app.buttons["share-today"].exists)
         capture("native-meal-details", app: app)
         openSettings(app)
-        XCTAssertTrue(app.buttons["open-school-shortcuts"].isHittable)
+        let shortcuts = app.buttons["open-school-shortcuts"]
+        for _ in 0..<4 where !shortcuts.isHittable { app.swipeUp() }
+        XCTAssertTrue(shortcuts.isHittable, app.debugDescription)
         XCTAssertTrue(app.buttons["Siri 사용법"].exists)
         capture("native-settings", app: app)
         app.terminate()
