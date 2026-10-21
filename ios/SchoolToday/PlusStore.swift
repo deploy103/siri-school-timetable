@@ -23,6 +23,9 @@ final class PlusStore: ObservableObject {
 
     #if SCHOOL_STOREKIT_DIAGNOSTICS
     // Enabled only in the disposable StoreKit host, never the app or widget.
+    private(set) var diagnosticStartupRefreshFinished = false
+    private(set) var diagnosticRefreshesInFlight = 0
+
     static func diagnostic(_ event: String) {
         print("SKDIAG wall=\(Date().timeIntervalSince1970) uptime=\(ProcessInfo.processInfo.systemUptime) \(event)")
     }
@@ -76,6 +79,7 @@ final class PlusStore: ObservableObject {
             #endif
             await self?.refresh()
             #if SCHOOL_STOREKIT_DIAGNOSTICS
+            self?.diagnosticStartupRefreshFinished = true
             Self.diagnostic("startup refresh end")
             #endif
         }
@@ -109,6 +113,8 @@ final class PlusStore: ObservableObject {
         refreshGeneration += 1
         let generation = refreshGeneration
         #if SCHOOL_STOREKIT_DIAGNOSTICS
+        diagnosticRefreshesInFlight += 1
+        defer { diagnosticRefreshesInFlight -= 1 }
         Self.diagnostic("refresh begin generation=\(generation)")
         var yielded = 0
         #endif
