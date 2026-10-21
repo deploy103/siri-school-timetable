@@ -7,7 +7,9 @@ SwiftUI iPhone 앱(iOS 17+)이다. 웹뷰/PWA 래퍼가 아니며 앱 타깃 안
 - 학교 선택 후 `오늘 / 주간 / 준비`로 바로 이동한다. Siri 설정은 선택 사항이며 오늘 화면과 설정에서 다시 연다.
 - 오늘·내일·주간 시간표와 급식은 무료다. 주간 요청은 `/api/timetable/range`, `/api/meal/range`를 사용한다. 두 자료는 동시에 요청하고 먼저 도착한 결과부터 표시해 다른 서비스의 장애를 기다리지 않는다.
 - 수업을 누르면 과목이 미리 선택된 준비물 입력을 연다. 한 과목의 자동 연결은 계속 무료이며, 같은 날 중복 수업은 준비물을 중복 생성하지 않는다. 완료 상태는 날짜별로 저장한다.
-- 준비물·과제 마감은 날짜를 골라 직접 등록한다. 기본 알림은 일정당 한 시점이며, 요청할 때만 권한을 구한다. 완료·삭제하면 예약을 취소한다. 알림 전달 시각과 백그라운드 자료 수집은 보장하지 않는다.
+- 준비물·수행평가·시험·숙제를 날짜와 메모로 직접 등록한다. 준비 탭은 지난 미완료·오늘·앞으로 7일·이후 일정을 모아 보이며 날짜별 준비도 유지한다. 기본 알림은 일정당 한 시점이며, 요청할 때만 권한을 구한다. 완료·삭제하면 예약을 취소한다. 알림 전달 시각과 백그라운드 자료 수집은 보장하지 않는다.
+- 주간의 ‘학교 학사일정’은 `/api/calendar/range`에서 받은 NEIS 원문을 개인 평가와 별도로 표시한다. 같은 이름의 행사와 주야/과정 정보도 보존한다. 빈 일정이나 학년 원문 값을 휴일·등교 여부로 해석하지 않는다. 새 서버 경로 배포 전에는 오류·재시도 안내가 표시될 수 있으며 앱 수정이 운영 서버 배포를 뜻하지 않는다.
+- 설정의 ‘개인 선생님 메모’는 직접 적은 과목·이름·교실·메모를 학교·학급별로 기기에만 저장한다. 공식 교사 명단이나 공유 자료가 아니며 준비 기록의 JSON 백업·수동 iCloud·학교 설정 공유·위젯에 포함하지 않는다. 연락처 등 민감한 정보 입력은 권하지 않는다.
 - 수업을 길게 눌러 해당 날짜·교시의 선택과목과 교실을 수정하거나 누락 수업을 직접 추가한다. 원본을 유지하며 학교 자료로 되돌릴 수 있다. 수정은 앱·위젯·준비물 연결에 적용하며 기존 Siri·읽기·공유는 학교 원본을 사용한다. 자료 누락은 ‘준비물 없음’으로 처리하지 않는다.
 - 개인 기록은 Application Support의 별도 JSON에 원자적으로 저장하고 iOS 파일 보호를 적용한다. 읽을 수 없는 원본은 덮어쓰지 않는다. 학교 변경은 기록을 삭제하지 않으며 다른 학급의 기록은 섞어 표시하지 않는다. 무료 JSON 백업·복원과 명시적으로 실행하는 iCloud 동기화를 제공한다.
 - 최근 받은 한 주 자료는 학교·학급·서버·실제/예제 모드를 구분해 저장한다. 재조회 실패 때 날짜와 마지막 확인 시각을 유지하며 최신 여부를 안내한다.
@@ -20,11 +22,21 @@ SwiftUI iPhone 앱(iOS 17+)이다. 웹뷰/PWA 래퍼가 아니며 앱 타깃 안
 ### Plus·동기화 운영 준비
 
 - 상품 ID는 `com.deploy103.schooltoday.plus.monthly`, `com.deploy103.schooltoday.plus.yearly`이다. 앱은 실제 StoreKit 상품 가격과 기간만 표시하고 검증된 현재 권한만 사용한다. 취소·승인 대기·구입 복원·환불/회수·만료를 처리하며 로컬 설정으로 권한을 만들지 않는다. 무료 체험 문구는 실제 상품의 introductory offer와 계정 이용 자격을 확인한 경우에만 표시한다.
-- `SchoolTodayTests/Plus.storekit`은 **로컬 테스트 전용** 미국 storefront의 월 US$1.90 / 연 US$14.90 예시 카탈로그다. 출시 상품·국내 판매 가격·무료 체험을 등록하는 파일이 아니다. 명시적인 `SchoolToday-LocalStoreKit` scheme에서만 활성화하고 `PlusStoreKitTests`가 SKTestSession으로 구매·만료·환불·복원을 검증한다. 기본 `SchoolToday` scheme은 이 클래스를 제외하고 실제 상품 조회·실패 UI를 검사한다. 아래 로컬 스크립트와 CI는 두 scheme을 순서대로 실행하며 구독 테스트 실패도 실패로 기록한다. 로컬 테스트 scheme을 실제 판매 검증에 사용하면 안 된다.
+- `SchoolTodayTests/Plus.storekit`은 **로컬 테스트 전용** 미국 storefront의 월 US$1.90 / 연 US$14.90 예시 카탈로그다. 출시 상품·국내 판매 가격·무료 체험을 등록하는 파일이 아니다. `SchoolToday-LocalStoreKit` scheme의 독립 `StoreKitTestHost`는 실제 `PlusStore.swift`를 그대로 컴파일하되 앱 시작 시 초기화하지 않는다. `SchoolTodayStoreKitTests`가 SKTestSession 설정 뒤 최초 store 접근을 제어한다. 이는 구독 저장소의 계약 검사이지 실제 앱 시작 순서의 검증은 아니다. 기본 `SchoolTodayTests`와 분리하며 실패를 건너뛰지 않는다. 아래 로컬 스크립트와 CI는 두 scheme을 순서대로 실행한다. 독립 호스트 빌드는 통과했지만 첫 상품 API가 진행되지 않아 실행을 중단했으며 lifecycle 통과는 없다. 로컬 테스트를 실제 판매 검증으로 사용하면 안 된다.
 - 실제 판매에는 Apple Developer 계정의 In-App Purchase 설정, App Store Connect 상품·구독 그룹·판매 가격·계약, 공개 개인정보처리방침 URL과 심사 준비가 필요하다. 소스 구현이나 로컬 StoreKit 테스트는 판매 개시를 뜻하지 않는다. Apple 계정이나 운영 상품을 자동 변경하지 않았다.
-- CloudKit container는 `iCloud.com.deploy103.schooltoday`이며 private database의 `SchoolPreparation` / `preparation-v1` 레코드 하나에 최대 256 KiB schema 2 기록을 저장한다. 사용자가 누를 때만 실행한다. 자동 동기화·서버 푸시는 없으며 동기화 권한은 Plus 구매와 별개다. Debug는 Development, Release는 Production entitlement를 사용한다. Apple 계정에서 container·서명 entitlement와 운영 schema를 준비해야 실제 기기에서 사용할 수 있다.
+- CloudKit container는 `iCloud.com.deploy103.schooltoday`이며 private database의 `SchoolPreparation` / `preparation-v1` 레코드 하나에 최대 256 KiB schema 3 준비 기록을 저장한다. 사용자가 누를 때만 실행한다. 자동 동기화·서버 푸시는 없으며 동기화 권한은 Plus 구매와 별개다. Debug는 Development, Release는 Production entitlement를 사용한다. Apple 계정에서 container·서명 entitlement와 운영 schema를 준비해야 실제 기기에서 사용할 수 있다.
 - 양쪽이 바뀌면 한쪽 전체를 직접 선택한다. 계정 변경·원격 기록 삭제·지원하지 않는 형식·동시 변경 시 자동 덮어쓰지 않는다. 복원 직전 기기 원본을 별도 파일로 보존한다. 구매 복원은 Plus 권한만 복원하며 개인 기록은 JSON/iCloud로 별도로 복원한다.
-- 준비 기록 schema 1은 ID·완료 상태를 유지해 schema 2로 읽는다. JSON 가져오기는 schema 2·크기·날짜·관계 검증과 사용자 교체 확인을 거치고, 미리보기 후 기기 기록이 바뀌면 중단한다. CloudKit 운영 데이터 통신·실물 알림·Siri·SpringBoard 위젯은 별도 실제 기기 검증 대상이다.
+- 준비 기록 schema 1·2는 ID·완료 상태를 유지해 schema 3으로 읽는다. 기존 `preparation-v1.json` 경로는 유지한다. 새 분류·메모가 구형 앱의 재저장으로 사라지지 않도록 새 저장은 schema 3을 사용하며 구형 앱으로 되돌리면 새 archive를 읽지 못한다. JSON 가져오기는 schema 1–3·크기·날짜·관계 검증과 사용자 교체 확인을 거치고, 미리보기 후 기기 기록이 바뀌면 중단한다. CloudKit 운영 데이터 통신·실물 알림·Siri·SpringBoard 위젯은 별도 실제 기기 검증 대상이다.
+
+### 2026-10-21 학생 v1 검증 상태
+
+- 첫 student-v1 snapshot(archive `5264901d…`, 원본 64개 SHA 일치)은 native 빌드 및 hosted unit **38/38**, 기존 날짜/재실행 UI **1/1**, 최대 글자·dark UI **1/1**을 통과했다. 새 평가/메모 UI **1개는 실패**했다. 제목 입력 뒤 키보드가 열린 상태에서 과목란 `isHittable`을 만족하지 못했으며 평가 저장·완료·메모 UI·재실행은 미도달이다. 원인은 앱과 테스트 제스처 중 확정하지 않았다. 기존 결과를 새 기능 전체 통과로 합산하지 않는다.
+- student-v2(archive `cbbb37ff…`, 67개 source SHA 일치)는 앱·위젯·unit/UI와 독립 StoreKit host 빌드, hosted unit **41/41** 및 공식 학사일정 UI **1/1(93.268초)**를 통과했다. 공식 일정은 503→재시도·같은 이름의 두 행사·서로 다른 과정/학년 원문·빈 6일의 안내를 검사했다. 평가/메모 UI는 ‘입력 완료’ 탭 뒤에도 제목 포커스와 키보드가 남아 3초 대기에서 **1개 실패(92.399초)**했다. 저장/완료/개인 메모 UI는 미도달이다. 버튼 영역과 실제 터치 영역이 같은지는 아직 확정하지 않았다.
+- 독립 StoreKit lifecycle은 첫 상품 API의 XcodeTest/USA `system(unknown)` 뒤 약 7분간 진행이 없어 07:24:12 UTC 중단했다. assertion 실패/카탈로그 복구/구매 검증이 아니라 **미완료**이며 취소 뒤 teardown 완료도 확인하지 못했다. 원본 로그·부분 xcresult·22개 일치 binary 기록과 19개 미검토 PNG를 보존했다.
+- 다음 소스는 완료 버튼의 전체 표시 영역을 label 내부 `contentShape`로 터치 영역에 포함한다. 기존 중앙 탭과 키보드 부재 3초 assertion을 바꾸지 않았으며 아직 native 재검사 전이다. Linux Foundation **40/40**과 Swift 문법/YAML 검사는 native 결과를 대체하지 않는다.
+- 웹/서버는 Vitest **211/211**, lint/typecheck/production build를 통과했다. 첫 저장 후 선택적 Siri 동선의 별도 브라우저 snapshot은 Chromium/WebKit **24/24**를 통과했다. 새 학사일정 서버의 운영 배포·실물 Siri·실제 구독·CloudKit·알림 전달 검증은 아니다.
+- 이전 UIv3의 가격/내보내기 단일 통과는 가격 안전 조건과 Files 닫기·저장 버튼 접근·내보내기 복귀를 확인했다. Boolean 값이 없는 로그로 ‘조회 중+상품 있음’과 ‘조회 완료’를 구별할 수 없으므로 completed-catalog라고 단정하지 않는다. 이전 빈 카탈로그 lifecycle 실패도 남는다.
+- 현재 캡처는 보존했으나 media quota 때문에 시각 검토하지 못했다. 시각 승인·새 기능 전체 통과·출시 완료를 주장하지 않는다. student-v2 native SDK 작업은 07:24:46 UTC 실제 정리·해제했으며 후속 검증은 별도 리소스 협의가 필요하다.
 
 ### 2026-10-17 이전 기본 준비 snapshot 검증 기록
 

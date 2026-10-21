@@ -4,6 +4,7 @@ import Foundation
 /// Deterministic native UI-test data. This code is excluded from Release builds.
 final class PreviewTransport: URLProtocol {
     private static var failedVoice = false
+    private static var failedCalendar = false
     private static var returnedEmptyClasses = false
     static var session: URLSession {
         let configuration = URLSessionConfiguration.ephemeral
@@ -60,12 +61,28 @@ final class PreviewTransport: URLProtocol {
             }
         case "/api/meal/today":
             body = "{\"date\":\"\(date)\",\"meals\":[{\"code\":\"2\",\"name\":\"중식\",\"dishes\":[\"쌀밥\",\"계란국 (1)\"],\"calories\":\"701 Kcal\",\"nutrition\":\"단백질: 25g\",\"origin\":\"쌀: 국내산\"}]}"
-        case "/api/timetable/range", "/api/meal/range":
+        case "/api/timetable/range", "/api/meal/range", "/api/calendar/range":
             let query = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?.queryItems ?? []
             let from = query.first { $0.name == "from" }?.value ?? ""
             let to = query.first { $0.name == "to" }?.value ?? ""
             let dates = SchoolCalendar.range(from: from, to: to) ?? []
-            if path == "/api/timetable/range", arguments.contains("--fail-timetable") {
+            if path == "/api/calendar/range" {
+                if arguments.contains("--fail-first-calendar"), !Self.failedCalendar {
+                    Self.failedCalendar = true
+                    status = 503
+                    body = #"{"error":{"message":"학교 학사일정에 연결할 수 없습니다."}}"#
+                } else {
+                    let days = dates.enumerated().map { index, key in
+                        SchoolEventsDay(date: arguments.contains("--wrong-day") ? "2000-01-01" : key,
+                                        school: SchoolEventsDay.SchoolInfo(name: "테스트고등학교"),
+                                        events: index == 0 && !arguments.contains("--empty-calendar") ? [
+                                            SchoolEvent(name: "예시 학교 행사", content: "오전 안내 · 실제 일정 아님", lessonDayType: "해당없음", dayNightCourse: "주간", schoolCourse: "고등학교", gradeFlags: ["Y", "N", "*", "*", "*", "*"]),
+                                            SchoolEvent(name: "예시 학교 행사", content: "오후 안내 · 실제 일정 아님", lessonDayType: "해당없음", dayNightCourse: "야간", schoolCourse: "고등학교", gradeFlags: ["N", "Y", "*", "*", "*", "*"]),
+                                        ] : [])
+                    }
+                    body = String(data: try! JSONEncoder().encode(SchoolRange(from: from, to: to, days: days)), encoding: .utf8)!
+                }
+            } else if path == "/api/timetable/range", arguments.contains("--fail-timetable") {
                 status = 503
                 body = #"{"error":{"message":"학교 서비스에 연결할 수 없습니다."}}"#
             } else if path == "/api/timetable/range" {

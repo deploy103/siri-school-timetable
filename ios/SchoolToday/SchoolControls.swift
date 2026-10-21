@@ -44,6 +44,7 @@ struct SchoolEditorPage<Content: View>: View {
                 .padding(20)
                 .frame(maxWidth: .infinity)
         }
+        .scrollDismissesKeyboard(.interactively)
         .background(SchoolDesign.canvas.ignoresSafeArea())
         .foregroundStyle(SchoolDesign.ink)
         .tint(SchoolDesign.blue)

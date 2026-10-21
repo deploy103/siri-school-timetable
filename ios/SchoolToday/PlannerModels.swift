@@ -104,6 +104,19 @@ struct PreparationRule: Codable, Identifiable, Equatable {
 
 struct PreparationTask: Codable, Identifiable, Equatable {
     enum Kind: String, Codable, CaseIterable { case item, deadline }
+    enum Category: String, Codable, CaseIterable {
+        case assessment, exam, homework
+        var label: String {
+            switch self {
+            case .assessment: return "수행평가"
+            case .exam: return "시험"
+            case .homework: return "숙제"
+            }
+        }
+    }
+    enum ScheduleGroup: String, CaseIterable {
+        case overdue = "날짜가 지났어요", today = "오늘", week = "앞으로 7일", later = "이후 일정"
+    }
     var id = UUID()
     let selection: String
     var title: String
@@ -112,6 +125,26 @@ struct PreparationTask: Codable, Identifiable, Equatable {
     var kind: Kind = .item
     var reminder: Date? = nil
     var extraReminders: [Date]? = nil
+    var category: Category? = nil
+    var notes: String? = nil
+
+    var completionID: String { "task:\(id.uuidString)" }
+    var kindLabel: String { kind == .item ? "준비물" : category?.label ?? "마감" }
+
+    func scheduleGroup(relativeTo now: Date) -> ScheduleGroup {
+        let today = SchoolCalendar.key(now)
+        if date < today { return .overdue }
+        if date == today { return .today }
+        return date <= SchoolCalendar.adding(7, to: today)! ? .week : .later
+    }
+
+    func relativeDate(to now: Date) -> String {
+        guard let due = SchoolCalendar.date(date) else { return date }
+        let days = SchoolCalendar.calendar.dateComponents([.day], from: SchoolCalendar.calendar.startOfDay(for: now), to: due).day!
+        if days == 0 { return "오늘" }
+        if days == 1 { return "내일" }
+        return days < 0 ? "\(-days)일 지남" : "\(days)일 남음"
+    }
 }
 
 struct LessonCorrection: Codable, Identifiable, Equatable {
@@ -133,7 +166,8 @@ struct PreparationOccurrence: Codable, Identifiable, Equatable {
 }
 
 struct PreparationPlan: Codable, Equatable {
-    var version = 2
+    // Older apps must reject, rather than silently discard, classification and notes on resave.
+    var version = 3
     var rules: [PreparationRule] = []
     var tasks: [PreparationTask] = []
     var completed: Set<String> = []
@@ -143,6 +177,11 @@ struct PreparationPlan: Codable, Equatable {
 
     static func subjectKey(_ value: String) -> String {
         value.trimmingCharacters(in: .whitespacesAndNewlines).precomposedStringWithCanonicalMapping
+    }
+
+    func scheduledTasks(selection: String, completed isCompleted: Bool = false) -> [PreparationTask] {
+        tasks.filter { $0.selection == selection && completed.contains($0.completionID) == isCompleted }
+            .sorted { $0.date == $1.date ? $0.id.uuidString < $1.id.uuidString : $0.date < $1.date }
     }
 
     func occurrences(on date: String, selection: String, lessons: [Timetable.Lesson]?, automaticLimit: Int = 1, includeStages: Bool = false) -> [PreparationOccurrence] {
@@ -268,8 +307,8 @@ extension PreparationPlan {
     init(from decoder: Decoder) throws {
         let values = try decoder.container(keyedBy: CodingKeys.self)
         let sourceVersion = try values.decode(Int.self, forKey: .version)
-        guard (1...2).contains(sourceVersion) else { throw SchoolError.message("다른 버전의 준비 기록이에요. 앱 업데이트를 확인해 주세요.") }
-        version = 2
+        guard (1...3).contains(sourceVersion) else { throw SchoolError.message("다른 버전의 준비 기록이에요. 앱 업데이트를 확인해 주세요.") }
+        version = 3
         rules = try values.decode([PreparationRule].self, forKey: .rules)
         tasks = try values.decode([PreparationTask].self, forKey: .tasks)
         completed = try values.decode(Set<String>.self, forKey: .completed)
@@ -279,12 +318,12 @@ extension PreparationPlan {
     }
 
     func validate() throws {
-        guard version == 2,
+        guard version == 3,
               Set(rules.map(\.id)).count == rules.count, Set(tasks.map(\.id)).count == tasks.count,
               Set(stages.map(\.id)).count == stages.count, Set(corrections.map(\.id)).count == corrections.count,
               Set(preferences.map(\.selection)).count == preferences.count,
               rules.allSatisfy({ !$0.selection.isEmpty && !Self.subjectKey($0.subject).isEmpty && !$0.items.isEmpty && $0.items.allSatisfy { !Self.subjectKey($0).isEmpty } }),
-              tasks.allSatisfy({ !$0.selection.isEmpty && !Self.subjectKey($0.title).isEmpty && SchoolCalendar.date($0.date) != nil }),
+              tasks.allSatisfy({ !$0.selection.isEmpty && !Self.subjectKey($0.title).isEmpty && SchoolCalendar.date($0.date) != nil && ($0.notes?.count ?? 0) <= 2000 && ($0.category == nil || $0.kind == .deadline) }),
               corrections.allSatisfy({ !$0.selection.isEmpty && SchoolCalendar.date($0.date) != nil && (1...20).contains($0.period) && !Self.subjectKey($0.subject).isEmpty }),
               stages.allSatisfy({ stage in SchoolCalendar.date(stage.date) != nil && !Self.subjectKey(stage.title).isEmpty && tasks.contains { $0.id == stage.taskID && $0.kind == .deadline && stage.date <= $0.date } }),
               preferences.allSatisfy({ !$0.selection.isEmpty && ($0.eveningMinute.map { (0..<1440).contains($0) } ?? true) && ($0.morningMinute.map { (0..<1440).contains($0) } ?? true) && ($0.pausedUntil.map { SchoolCalendar.date($0) != nil } ?? true) && Self.validBellTimes($0.bellTimes ?? []) }) else {
