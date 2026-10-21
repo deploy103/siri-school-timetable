@@ -16,8 +16,9 @@ final class PlusStoreKitTests: XCTestCase {
         session.disableDialogs = true
         session.storefront = "USA"
         session.locale = Locale(identifier: "en_US")
-        // Drive a natural lapse: expireSubscription can leave SK2 subscribed on iOS Simulator.
-        session.timeRate = .oneRenewalEveryTenSeconds
+        // Diagnostic control: establish live access before accelerating the lapse phase.
+        // Whether changing the rate accelerates an existing period is measured below, not assumed.
+        session.timeRate = .realTime
         PlusStore.diagnostic("test configured rate=\(session.timeRate)")
         let store = PlusStore.shared
         addTeardownBlock {
@@ -69,9 +70,15 @@ final class PlusStoreKitTests: XCTestCase {
         PlusStore.diagnostic("test monthly purchase end access=\(store.isPlus)")
         XCTAssertTrue(store.isPlus, store.message ?? "Purchase did not activate access")
         XCTAssertFalse(store.purchasing)
+        guard store.isPlus, !store.purchasing else { throw Timeout.access }
         let purchased = try await assertVerifiedAccess(productID: monthlyID)
 
+        PlusStore.diagnostic("test disable renewal begin id=\(purchased.id)")
         try session.disableAutoRenewForTransaction(identifier: UInt(purchased.id))
+        PlusStore.diagnostic("test disable renewal end id=\(purchased.id)")
+        PlusStore.diagnostic("test lapse rate change begin rate=\(session.timeRate)")
+        session.timeRate = .oneRenewalEveryTenSeconds
+        PlusStore.diagnostic("test lapse rate change end rate=\(session.timeRate)")
         // Wait for Apple's independent lapse, then test our refresh against it.
         try await waitForNoEntitlements()
         PlusStore.diagnostic("test natural lapse confirmed; explicit refresh begin")
@@ -147,12 +154,27 @@ final class PlusStoreKitTests: XCTestCase {
     private func waitForNoEntitlements(file: StaticString = #filePath, line: UInt = #line) async throws {
         let clock = ContinuousClock()
         let deadline = clock.now.advanced(by: .seconds(20))
+        var previous: [String]?
+        PlusStore.diagnostic("test natural lapse observation begin; budget=20s")
         repeat {
             var entitled = false
+            var observed: [String] = []
+            let began = clock.now
             for await result in Transaction.currentEntitlements {
                 if case .verified(let transaction) = result,
-                   PlusStore.productIDs.contains(transaction.productID) { entitled = true }
+                   PlusStore.productIDs.contains(transaction.productID) {
+                    entitled = true
+                    observed.append(PlusStore.diagnosticTransaction(transaction))
+                }
             }
+            let snapshot = observed.sorted()
+            let elapsed = began.duration(to: clock.now)
+            if snapshot != previous || elapsed >= .seconds(1) {
+                PlusStore.diagnostic("test lapse enumeration elapsed=\(elapsed) transactions=\(snapshot)")
+                previous = snapshot
+            }
+            // A slow read must not turn an empty result after the budget into a pass.
+            if clock.now >= deadline { break }
             if !entitled { return }
             try await Task.sleep(for: .milliseconds(50))
         } while clock.now < deadline
@@ -162,6 +184,7 @@ final class PlusStoreKitTests: XCTestCase {
 
     private enum Timeout: Error { case access, entitlements }
 
+    @MainActor
     @discardableResult
     private func assertVerifiedAccess(productID: String,
                                       file: StaticString = #filePath, line: UInt = #line) async throws -> Transaction {
@@ -170,10 +193,13 @@ final class PlusStoreKitTests: XCTestCase {
                   transaction.productID == productID,
                   transaction.productType == .autoRenewable,
                   transaction.revocationDate == nil, !transaction.isUpgraded else { continue }
+            PlusStore.diagnostic("test verified-access observation \(PlusStore.diagnosticTransaction(transaction))")
             XCTAssertEqual(transaction.environment, .xcode, "Only local test transactions are allowed",
                            file: file, line: line)
-            XCTAssertTrue(transaction.expirationDate.map { $0 > Date() } ?? false,
+            let unexpired = transaction.expirationDate.map { $0 > Date() } ?? false
+            XCTAssertTrue(unexpired,
                           "Expected an unexpired subscription", file: file, line: line)
+            guard transaction.environment == .xcode, unexpired else { throw Timeout.entitlements }
             return transaction
         }
         XCTFail("No verified current entitlement for \(productID)", file: file, line: line)
