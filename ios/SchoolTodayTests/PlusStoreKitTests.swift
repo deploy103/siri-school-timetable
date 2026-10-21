@@ -162,7 +162,7 @@ final class PlusStoreKitTests: XCTestCase {
         while store.isPlus != expected && clock.now < deadline {
             try await Task.sleep(for: .milliseconds(50))
         }
-        guard store.isPlus == expected else {
+        guard store.isPlus == expected, clock.now < deadline else {
             XCTFail("Passive transaction listener missed access change to \(expected)", file: file, line: line)
             // Outcome is final. Observe only app state; Apple reads could influence delivery.
             let began = clock.now
@@ -194,7 +194,7 @@ final class PlusStoreKitTests: XCTestCase {
         while store.isPlus != expected && clock.now < deadline {
             try await Task.sleep(for: .milliseconds(50))
         }
-        guard store.isPlus == expected else {
+        guard store.isPlus == expected, clock.now < deadline else {
             PlusStore.diagnostic("test passive deadline FAILED expected=\(expected) access=\(store.isPlus)")
             XCTFail("Passive transaction listener missed access change to \(expected)", file: file, line: line)
             await failureSnapshot()
