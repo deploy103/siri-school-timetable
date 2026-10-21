@@ -480,8 +480,12 @@ final class SchoolTodayUITests: XCTestCase {
         XCTAssertTrue(app.buttons["교재"].waitForExistence(timeout: 10))
         XCTAssertEqual(app.buttons["교재"].value as? String, "미완료")
         capture("planner-large-tomorrow", app: app)
+        let beforeCalendar = XCTAttachment(string: app.debugDescription)
+        beforeCalendar.name = "planner-large-before-calendar-AX"
+        beforeCalendar.lifetime = .keepAlways
+        add(beforeCalendar)
         tap(app.buttons["planner-date"], in: app)
-        XCTAssertTrue(app.buttons["다음 달"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["다음 달"].waitForExistence(timeout: 5), app.debugDescription)
         capture("planner-large-custom-calendar", app: app)
         tap(app.buttons["취소"], in: app)
         openSettings(app)
