@@ -341,7 +341,8 @@ describe("API routes", () => {
       "fetch",
       vi.fn(async () =>
         neisResponse("hisTimetable", [
-          { SCHUL_NM: "한세사이버보안고등학교", PERIO: "1", ITRT_CNTNT: "자료구조" },
+          { SCHUL_NM: "한세사이버보안고등학교", PERIO: "4", ITRT_CNTNT: "자료구조" },
+          { SCHUL_NM: "한세사이버보안고등학교", PERIO: "2", ITRT_CNTNT: "국어" },
         ]),
       ),
     );
@@ -349,7 +350,7 @@ describe("API routes", () => {
     expect(response.status).toBe(200);
     expect(response.headers.get("content-type")).toBe("text/plain; charset=utf-8");
     expect(response.headers.get("x-school-data-mode")).toBe("live");
-    expect(await response.text()).toBe("오늘 시간표는 1교시 자료구조입니다.");
+    expect(await response.text()).toBe("오늘 시간표는 2교시 국어, 4교시 자료구조입니다. 1, 3교시 자료가 없습니다. 수업 여부는 학교에 확인해 주세요.");
   });
 
   it("identifies example voice data without changing legacy plain-text output", async () => {
