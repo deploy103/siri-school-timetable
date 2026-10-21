@@ -39,6 +39,7 @@ SwiftUI iPhone 앱(iOS 17+)이다. 웹뷰/PWA 래퍼가 아니며 앱 타깃 안
 - 웹/서버는 Vitest **211/211**, lint/typecheck/production build를 통과했다. 첫 저장 후 선택적 Siri 동선의 별도 브라우저 snapshot은 Chromium/WebKit **24/24**를 통과했다. 새 학사일정 서버의 운영 배포·실물 Siri·실제 구독·CloudKit·알림 전달 검증은 아니다.
 - 이전 UIv3의 가격/내보내기 단일 통과는 가격 안전 조건과 Files 닫기·저장 버튼 접근·내보내기 복귀를 확인했다. Boolean 값이 없는 로그로 ‘조회 중+상품 있음’과 ‘조회 완료’를 구별할 수 없으므로 completed-catalog라고 단정하지 않는다. 이전 빈 카탈로그 lifecycle 실패도 남는다.
 - 부모는 v3 bundle `2d68aa92…`의 547개 checksum·source 67개·binary 19개, v4 bundle `93b11ad8…`의 205개 checksum·source 67개·binary 7개 저장 bytes 및 두 `recheck-saved.py`를 Linux에서 독립 확인했다. v3 24개/v4 14개 PNG는 media quota로 시각 미검토이며 시각 승인·전체 통과·출시 완료를 주장하지 않는다. SDK 실제 정리·해제는 v3 **07:52:13 UTC**, v4 **08:08:20 UTC**다. v4 소유 phone은 light 복원 후 Shutdown, 최종 SDK 작업/booted 기기 0개이며 추가 SDK 예약은 없다.
+- Draft [PR #4](https://github.com/deploy103/siri-school-timetable/pull/4)의 [첫 CI](https://github.com/deploy103/siri-school-timetable/actions/runs/39568570713)는 웹 211개·브라우저 24개·lint/typecheck/audit와 unsigned iPhone Release 빌드를 통과했다. iPhone 16 Pro/iOS 18.5의 hosted **41/41**, UI **17/19** 통과이며 전체 CI는 **실패**다. 평가/개인 메모·공식 일정·최대 글자 UI도 통과했지만 설정 진입 직후 단축어 버튼 hittability와 Files action identifier 조회가 실패했다. 후자는 보존 AX에 identifier 없는 `Move` 버튼이 존재한다. 다음 후보는 제품 코드 없이 설정 버튼을 스크롤로 드러내고 Files의 실제 Move/Save 표기를 허용하되 enabled/hittable·dismissal 검사를 유지한다. Swift 문법 검사만 통과했으며 새 native 결과는 아직 없다. StoreKit CI 단계는 선행 실패로 미실행이고 병합·배포하지 않았다.
 
 ### 2026-10-17 이전 기본 준비 snapshot 검증 기록
 
