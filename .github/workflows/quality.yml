@@ -40,8 +40,14 @@ jobs:
   ios:
     runs-on: macos-15
     timeout-minutes: 60
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_16.4.app/Contents/Developer
     steps:
       - uses: actions/checkout@v4
+      - name: Record native diagnostic toolchain
+        run: |
+          xcodebuild -version
+          xcrun simctl list runtimes
       - name: Install verified XcodeGen 2.46.0
         run: |
           curl -fsSL --retry 3 https://github.com/yonaskolb/XcodeGen/releases/download/2.46.0/xcodegen.zip -o "$RUNNER_TEMP/xcodegen.zip"
@@ -72,6 +78,7 @@ jobs:
             -parallel-testing-enabled NO \
             -resultBundlePath "$RUNNER_TEMP/SchoolToday.xcresult" CODE_SIGNING_ALLOWED=NO test
       - name: Local StoreKit subscription lifecycle
+        timeout-minutes: 5
         run: |
           device_id=$(xcrun simctl list devices available -j | python3 -c 'import json, sys; print(next(device["udid"] for devices in json.load(sys.stdin)["devices"].values() for device in devices if device["name"].startswith("iPhone")))')
           xcodebuild -project ios/SchoolToday.xcodeproj -scheme SchoolToday-LocalStoreKit \

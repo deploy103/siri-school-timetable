@@ -18,12 +18,15 @@ final class PlusStoreKitTests: XCTestCase {
         session.locale = Locale(identifier: "en_US")
         // Drive a natural lapse: expireSubscription can leave SK2 subscribed on iOS Simulator.
         session.timeRate = .oneRenewalEveryTenSeconds
+        PlusStore.diagnostic("test configured rate=\(session.timeRate)")
         let store = PlusStore.shared
         addTeardownBlock {
+            await PlusStore.diagnostic("teardown begin")
             try await session.setSimulatedError(nil, forAPI: .loadProducts)
             session.clearTransactions()
             session.resetToDefaultState()
             await store.refresh()
+            await PlusStore.diagnostic("teardown end")
         }
 
         // Exercise failure and retry against Apple's local server, not App Store availability.
@@ -61,7 +64,9 @@ final class PlusStoreKitTests: XCTestCase {
         XCTAssertEqual(yearly.subscription?.subscriptionPeriod.unit, .year)
         XCTAssertEqual(yearly.subscription?.subscriptionPeriod.value, 1)
 
+        PlusStore.diagnostic("test monthly purchase begin")
         await store.purchase(monthly)
+        PlusStore.diagnostic("test monthly purchase end access=\(store.isPlus)")
         XCTAssertTrue(store.isPlus, store.message ?? "Purchase did not activate access")
         XCTAssertFalse(store.purchasing)
         let purchased = try await assertVerifiedAccess(productID: monthlyID)
@@ -69,13 +74,19 @@ final class PlusStoreKitTests: XCTestCase {
         try session.disableAutoRenewForTransaction(identifier: UInt(purchased.id))
         // Wait for Apple's independent lapse, then test our refresh against it.
         try await waitForNoEntitlements()
+        PlusStore.diagnostic("test natural lapse confirmed; explicit refresh begin")
         await store.refresh()
+        PlusStore.diagnostic("test post-lapse refresh end access=\(store.isPlus)")
         XCTAssertFalse(store.isPlus, "A lapsed subscription must not grant access")
 
         // Keep later restore/refund checks independent of the accelerated lapse clock.
+        PlusStore.diagnostic("test before rate change rate=\(session.timeRate)")
         session.timeRate = .realTime
+        PlusStore.diagnostic("test rate changed rate=\(session.timeRate)")
         // No refresh/load/restore in either poll: only Transaction.updates can change access.
+        PlusStore.diagnostic("test external yearly purchase begin")
         let external = try await session.buyProduct(identifier: yearlyID)
+        PlusStore.diagnostic("test external yearly returned \(PlusStore.diagnosticTransaction(external))")
         try await waitForAccess(true, store: store)
         try await assertVerifiedAccess(productID: yearlyID)
 
@@ -94,13 +105,42 @@ final class PlusStoreKitTests: XCTestCase {
                                file: StaticString = #filePath, line: UInt = #line) async throws {
         let clock = ContinuousClock()
         let deadline = clock.now.advanced(by: .seconds(10))
+        PlusStore.diagnostic("test passive wait begin expected=\(expected) access=\(store.isPlus)")
         while store.isPlus != expected && clock.now < deadline {
             try await Task.sleep(for: .milliseconds(50))
         }
         guard store.isPlus == expected else {
+            PlusStore.diagnostic("test passive deadline FAILED expected=\(expected) access=\(store.isPlus)")
             XCTFail("Passive transaction listener missed access change to \(expected)", file: file, line: line)
+            await failureSnapshot()
             throw Timeout.access
         }
+        PlusStore.diagnostic("test passive wait passed expected=\(expected) access=\(store.isPlus)")
+    }
+
+    @MainActor
+    private func failureSnapshot() async {
+        // Read only after XCTFail: observing StoreKit must never rescue the passive-wait assertion.
+        PlusStore.diagnostic("failure-only snapshot begin; outcome already FAILED")
+        var count = 0
+        for await result in Transaction.currentEntitlements {
+            count += 1
+            if case .verified(let transaction) = result {
+                PlusStore.diagnostic("failure snapshot current \(PlusStore.diagnosticTransaction(transaction))")
+            } else {
+                PlusStore.diagnostic("failure snapshot current unverified")
+            }
+        }
+        PlusStore.diagnostic("failure snapshot current ended count=\(count)")
+        for id in PlusStore.productIDs {
+            let latest = await Transaction.latest(for: id)
+            if case .verified(let transaction)? = latest {
+                PlusStore.diagnostic("failure snapshot latest \(PlusStore.diagnosticTransaction(transaction))")
+            } else {
+                PlusStore.diagnostic("failure snapshot latest product=\(id) absent or unverified")
+            }
+        }
+        PlusStore.diagnostic("failure-only snapshot end; outcome remains FAILED")
     }
 
     @MainActor
