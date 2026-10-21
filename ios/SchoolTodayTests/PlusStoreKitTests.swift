@@ -1,10 +1,11 @@
 import XCTest
 import StoreKit
 import StoreKitTest
-@testable import SchoolToday
+@testable import StoreKitTestHost
 
 /// One ordered contract: run without parallel testing (the StoreKit session and store are shared).
-/// Run with SchoolToday-LocalStoreKit so StoreKit uses the local server before app launch.
+/// The empty host does not construct PlusStore; configure the local session before its first use.
+/// This covers the real store implementation, not SchoolTodayApp's launch lifecycle.
 final class PlusStoreKitTests: XCTestCase {
     @MainActor
     func testLocalSubscriptionLifecycle() async throws {
@@ -19,11 +20,23 @@ final class PlusStoreKitTests: XCTestCase {
         session.timeRate = .oneRenewalEveryTenSeconds
         let store = PlusStore.shared
         addTeardownBlock {
+            try await session.setSimulatedError(nil, forAPI: .loadProducts)
             session.clearTransactions()
             session.resetToDefaultState()
             await store.refresh()
         }
 
+        // Exercise failure and retry against Apple's local server, not App Store availability.
+        try await session.setSimulatedError(.generic(.networkError(URLError(.notConnectedToInternet))),
+                                            forAPI: .loadProducts)
+        await store.load()
+        XCTAssertFalse(store.loading)
+        XCTAssertFalse(store.isPlus)
+        XCTAssertTrue(store.products.isEmpty)
+        XCTAssertTrue(store.eligibleTrials.isEmpty)
+        XCTAssertEqual(store.message, "구독 가격을 불러오지 못했어요. 네트워크를 확인하고 다시 시도해 주세요.")
+
+        try await session.setSimulatedError(nil, forAPI: .loadProducts)
         await store.load()
         XCTAssertFalse(store.isPlus)
         XCTAssertFalse(store.loading)
