@@ -19,7 +19,7 @@ export function OnboardingGuide({ onDismiss }: Props) {
       </div>
       <ol className="shortcut-steps onboarding-steps">
         <li><span>1</span><div><strong>학교, 학년, 반 먼저 저장</strong><p>아래에서 학교를 검색하고 학년·반을 골라 저장하세요.</p></div></li>
-        <li><span>2</span><div><strong>그 다음 단축어 추가</strong><p>저장하면 뜨는 Siri 설정에서 단축어를 만들어요.</p></div></li>
+        <li><span>2</span><div><strong>그 다음 단축어 추가</strong><p>저장한 뒤 시간표의 ‘Siri 설정’을 눌러 주소를 복사하고, 단축어 앱에서 직접 추가해요.</p></div></li>
         <li><span>3</span><div><strong>마지막으로 Siri 문구 등록하면 끝</strong><p>“시리야, 오늘 학교 시간표 뭐야?”라고 말해보세요.</p></div></li>
       </ol>
       <div className="onboarding-actions">

@@ -15,13 +15,10 @@ export default function HomePage() {
   const onboarding = useOnboarding();
   const [isEditing, setIsEditing] = useState(false);
   const [activeView, setActiveView] = useState<"timetable" | "meal">("timetable");
-  const [openSiriOnMount, setOpenSiriOnMount] = useState(false);
 
   function save(next: SchoolSettings) {
-    const isFirstSave = !settings;
     saveSettings(next);
     setIsEditing(false);
-    if (isFirstSave) setOpenSiriOnMount(true);
   }
 
   function showGuideAgain() {
@@ -73,8 +70,6 @@ export default function HomePage() {
         onChangeSettings={() => setIsEditing(true)}
         onShowMeal={() => setActiveView("meal")}
         onShowGuide={showGuideAgain}
-        openSiriOnMount={openSiriOnMount}
-        onSiriAutoOpened={() => setOpenSiriOnMount(false)}
       />
     </>
   );

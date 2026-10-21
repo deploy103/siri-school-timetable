@@ -18,7 +18,7 @@ final class SchoolTodayTests: XCTestCase {
         try Data(fixture.utf8).write(to: url)
         let archive = PlannerArchive(directory: directory)
         let migrated = try archive.load()
-        XCTAssertEqual(migrated.version, 2)
+        XCTAssertEqual(migrated.version, 3)
         XCTAssertEqual(migrated.rules.map(\.id.uuidString), ["11111111-1111-1111-1111-111111111111"])
         XCTAssertEqual(migrated.tasks.map(\.id.uuidString), ["22222222-2222-2222-2222-222222222222"])
         XCTAssertTrue(migrated.stages.isEmpty)
@@ -29,6 +29,72 @@ final class SchoolTodayTests: XCTestCase {
         XCTAssertEqual(try Data(contentsOf: url), Data(fixture.utf8), "Reading must not rewrite the v1 source")
         try archive.save(migrated)
         XCTAssertEqual(try archive.load(), migrated)
+    }
+
+    @MainActor
+    func testAssessmentsRemainFreePersistAndPreserveLegacyDeadlines() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let url = directory.appendingPathComponent("preparation-v1.json")
+        let legacy = Data(#"{"version":2,"rules":[],"tasks":[{"id":"22222222-2222-2222-2222-222222222222","selection":"old-class","title":"기존 마감","date":"2026-10-20","subject":"영어","kind":"deadline"}],"completed":["task:22222222-2222-2222-2222-222222222222"],"corrections":[],"stages":[],"preferences":[]}"#.utf8)
+        try legacy.write(to: url)
+        let api = try SchoolAPI(server: "https://fixture.invalid", session: PreviewTransport.session)
+        let store = PlannerStore(settings: settings, api: api, mode: "mock", directory: directory)
+        XCTAssertFalse(store.plusEnabled)
+        let old = try XCTUnwrap(store.plan.tasks.first)
+        XCTAssertNil(old.category)
+        XCTAssertNil(old.notes)
+        XCTAssertEqual(old.kindLabel, "마감")
+        XCTAssertEqual(try Data(contentsOf: url), legacy, "Reading must not rewrite old archives")
+        for category in PreparationTask.Category.allCases {
+            let task = PreparationTask(selection: settings.planningKey, title: category.label, date: "2026-10-22", subject: "과학", kind: .deadline, category: category, notes: "2장 · 파일 제출")
+            try store.addTask(task)
+        }
+        let saved = try PlannerArchive(directory: directory).load()
+        XCTAssertEqual(saved.version, 3)
+        XCTAssertEqual(saved.tasks.first, old)
+        XCTAssertTrue(saved.completed.contains(old.completionID))
+        XCTAssertEqual(saved.tasks.compactMap(\.category), [.assessment, .exam, .homework])
+        XCTAssertEqual(saved.tasks.dropFirst().map(\.notes), Array(repeating: "2장 · 파일 제출", count: 3))
+        var edited = try XCTUnwrap(store.tasks.first)
+        store.toggle(try XCTUnwrap(store.occurrences(on: edited.date).first { $0.id == edited.completionID }))
+        edited.date = "2026-10-23"
+        edited.notes = String(repeating: "가", count: 2000)
+        try store.addTask(edited)
+        let bytes = try Data(contentsOf: url)
+        var invalid = edited
+        invalid.notes = String(repeating: "가", count: 2001)
+        XCTAssertThrowsError(try store.addTask(invalid))
+        XCTAssertEqual(try Data(contentsOf: url), bytes)
+        let reopened = PlannerStore(settings: settings, api: api, mode: "mock", directory: directory)
+        XCTAssertEqual(reopened.tasks.first { $0.id == edited.id }, edited)
+        XCTAssertTrue(reopened.plan.completed.contains(edited.completionID))
+        reopened.toggle(try XCTUnwrap(reopened.occurrences(on: edited.date).first { $0.id == edited.completionID }))
+        XCTAssertFalse(reopened.plan.completed.contains(edited.completionID))
+        let restored = try JSONDecoder().decode(PreparationPlan.self, from: JSONEncoder().encode(reopened.plan))
+        XCTAssertEqual(restored, reopened.plan, "Backup/sync payloads must retain new metadata")
+        try reopened.deleteTask(edited)
+        XCTAssertFalse(try PlannerArchive(directory: directory).load().tasks.contains { $0.id == edited.id })
+        XCTAssertEqual(reopened.plan.tasks.first { $0.id == old.id }, old)
+    }
+
+    func testUpcomingAgendaUsesSeoulMidnightAndRetainsOverdueAndCompletedRecords() throws {
+        let before = try XCTUnwrap(ISO8601DateFormatter().date(from: "2026-10-21T14:59:59Z"))
+        let dates = ["2026-10-29", "2026-10-20", "2026-10-28", "2026-10-21", "2026-10-22"]
+        let tasks = dates.map { PreparationTask(selection: "a", title: $0, date: $0, kind: .deadline, category: .assessment) }
+        let finished = PreparationTask(selection: "a", title: "완료한 숙제", date: "2026-10-19", kind: .deadline, category: .homework)
+        let foreign = PreparationTask(selection: "b", title: "다른 반 비공개", date: "2026-10-18")
+        let plan = PreparationPlan(tasks: tasks + [finished, foreign], completed: [finished.completionID])
+        let agenda = plan.scheduledTasks(selection: "a")
+        XCTAssertEqual(agenda.map(\.date), ["2026-10-20", "2026-10-21", "2026-10-22", "2026-10-28", "2026-10-29"])
+        XCTAssertEqual(agenda.map { $0.scheduleGroup(relativeTo: before) }, [.overdue, .today, .week, .week, .later])
+        XCTAssertEqual(agenda.map { $0.relativeDate(to: before) }, ["1일 지남", "오늘", "내일", "7일 남음", "8일 남음"])
+        let after = before.addingTimeInterval(1)
+        XCTAssertEqual(agenda.map { $0.scheduleGroup(relativeTo: after) }, [.overdue, .overdue, .today, .week, .week])
+        XCTAssertEqual(agenda.map { $0.relativeDate(to: after) }, ["2일 지남", "1일 지남", "오늘", "6일 남음", "7일 남음"])
+        XCTAssertEqual(plan.scheduledTasks(selection: "a", completed: true), [finished])
+        XCTAssertEqual(plan.scheduledTasks(selection: "b"), [foreign])
     }
 
     func testNoticesRespectExpiryDeduplicationAndStageCompletion() throws {
@@ -82,8 +148,11 @@ final class SchoolTodayTests: XCTestCase {
         XCTAssertTrue(store.occurrences(on: day)[0].completed)
         var renamed = task
         renamed.title = "수정한 개인 보고서"
+        renamed.category = .assessment
+        renamed.notes = "기본 내용 수정은 만료 후에도 무료"
         try store.addTask(renamed, stages: original.stages)
         XCTAssertEqual(store.tasks.first?.title, "수정한 개인 보고서", "Expiration must not prevent basic editing of retained records")
+        XCTAssertEqual(try PlannerArchive(directory: directory).load().tasks, [renamed])
         try store.addTask(task, stages: original.stages)
         XCTAssertThrowsError(try store.addRule(subject: "음악", items: ["악보"]))
         try store.useFreeRule(try XCTUnwrap(store.rules.first { $0.subject == "체육" }))
@@ -105,6 +174,47 @@ final class SchoolTodayTests: XCTestCase {
         XCTAssertEqual(Set(object.keys), ["school", "schoolClass"])
         XCTAssertFalse(String(decoding: payload, as: UTF8.self).contains("개인"))
         XCTAssertEqual(store.plan.tasks.count, 1, "Sharing must not remove local private records")
+    }
+
+    @MainActor
+    func testExpiredPlusAllowsPartialRemovalButNotNewPremiumConfiguration() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let api = try SchoolAPI(server: "https://fixture.invalid", session: PreviewTransport.session)
+        let store = PlannerStore(settings: settings, api: api, mode: "mock", directory: directory)
+        let firstReminder = Date().addingTimeInterval(3600)
+        let task = PreparationTask(selection: settings.planningKey, title: "과학 숙제", date: "2026-11-20", kind: .deadline,
+                                   extraReminders: [firstReminder, firstReminder.addingTimeInterval(3600)], category: .homework)
+        var retained = PreparationStage(taskID: task.id, title: "초안", date: "2026-11-17", reminder: firstReminder)
+        let removed = PreparationStage(taskID: task.id, title: "제출 확인", date: "2026-11-19")
+        store.updateAccess(true)
+        try store.addTask(task, stages: [retained, removed])
+        store.updateAccess(false)
+
+        var earlier = task
+        earlier.date = "2026-11-18"
+        earlier.extraReminders = [firstReminder]
+        try store.addTask(earlier, stages: [retained])
+        var rescheduled = retained
+        rescheduled.reminder = firstReminder.addingTimeInterval(1800)
+        XCTAssertThrowsError(try store.addTask(earlier, stages: [rescheduled])) { XCTAssertTrue($0 is PlannerAccessError) }
+        retained.reminder = nil
+        try store.addTask(earlier, stages: [retained])
+        let saved = try PlannerArchive(directory: directory).load()
+        XCTAssertEqual(saved.tasks, [earlier])
+        XCTAssertEqual(saved.stages, [retained], "Removing an invalid stage or switching off its retained reminder must not require renewal")
+
+        var added = earlier
+        added.extraReminders?.append(firstReminder.addingTimeInterval(7200))
+        XCTAssertThrowsError(try store.addTask(added, stages: [retained])) { XCTAssertTrue($0 is PlannerAccessError) }
+        var reenabled = retained
+        reenabled.reminder = firstReminder
+        XCTAssertThrowsError(try store.addTask(earlier, stages: [reenabled])) { XCTAssertTrue($0 is PlannerAccessError) }
+        var changed = retained
+        changed.date = "2026-11-16"
+        XCTAssertThrowsError(try store.addTask(earlier, stages: [changed])) { XCTAssertTrue($0 is PlannerAccessError) }
+        XCTAssertThrowsError(try store.addTask(earlier, stages: [retained, removed])) { XCTAssertTrue($0 is PlannerAccessError) }
+        XCTAssertEqual(try PlannerArchive(directory: directory).load(), saved, "Rejected additions/edits must preserve saved records")
     }
 
     @MainActor

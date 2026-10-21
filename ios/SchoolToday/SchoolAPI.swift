@@ -115,6 +115,17 @@ struct SchoolAPI: Sendable {
         }
         return result.days
     }
+    func schoolEvents(settings: SchoolSettings, from: String, to: String) async throws -> [SchoolEventsDay] {
+        guard let expected = SchoolCalendar.range(from: from, to: to) else {
+            throw SchoolError.message("학사일정 조회는 올바른 날짜로 최대 7일까지 가능합니다.")
+        }
+        let result: SchoolRange<SchoolEventsDay> = try await json(path: "/api/calendar/range", query: settings.schoolQuery + [URLQueryItem(name: "from", value: from), URLQueryItem(name: "to", value: to)])
+        guard result.from == from, result.to == to, result.days.map(\.date) == expected,
+              result.days.allSatisfy({ $0.events.allSatisfy { $0.gradeFlags.count == 6 } }) else {
+            throw SchoolError.message("요청한 날짜의 학사일정이 아니거나 자료가 올바르지 않아요. 다시 확인해 주세요.")
+        }
+        return result.days
+    }
     func speech(settings: SchoolSettings, meal: Bool) async throws -> String {
         let result = try await request(path: meal ? "/api/voice/meal" : "/api/voice/timetable", query: meal ? settings.schoolQuery : settings.timetableQuery, text: true)
         guard result.response.mimeType == "text/plain",

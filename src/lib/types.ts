@@ -57,6 +57,22 @@ export interface MealResponse {
   meals: Meal[];
 }
 
+export interface SchoolEvent {
+  name: string;
+  content: string;
+  lessonDayType: string;
+  dayNightCourse: string;
+  schoolCourse: string;
+  /** Raw NEIS flags for grades 1–6; '*' is not interpreted as false. */
+  gradeFlags: [string, string, string, string, string, string];
+}
+
+export interface SchoolEventsResponse {
+  date: string;
+  school: { name: string };
+  events: SchoolEvent[];
+}
+
 export interface ApiErrorBody {
   error: {
     code: string;

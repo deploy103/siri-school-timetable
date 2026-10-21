@@ -307,13 +307,18 @@ struct SettingsView: View {
                     if let school = store.school, let url = SchoolSelectionLink.url(school) {
                         ShareLink(item: url) { Label("친구에게 학교·반 설정 공유", systemImage: "square.and.arrow.up") }
                             .buttonStyle(SchoolSecondaryButtonStyle())
-                        Text("학교·학년·반만 공유해요. 개인 준비물·과제·메모는 포함하지 않습니다.").font(.caption).foregroundStyle(.secondary)
+                        Text("학교 정보와 학과·학년·반 설정을 공유해요. 개인 준비물·과제·메모는 포함하지 않습니다.").font(.caption).foregroundStyle(.secondary)
                     }
                 }.modifier(SchoolCard())
                 if let planner {
                     NavigationLink { PlannerOptionsView(planner: planner) } label: {
                         Label("준비·알림·백업 설정", systemImage: "slider.horizontal.3")
                     }.buttonStyle(SchoolPrimaryButtonStyle()).accessibilityIdentifier("planner-options")
+                }
+                if let settings = store.school {
+                    NavigationLink { TeacherNotesView(settings: settings) } label: {
+                        Label("개인 선생님 메모", systemImage: "person.text.rectangle")
+                    }.buttonStyle(SchoolSecondaryButtonStyle()).accessibilityIdentifier("teacher-notes")
                 }
                 NavigationLink { PlusView() } label: { Label("Plus 구독·구입 복원", systemImage: "sparkles") }
                     .buttonStyle(SchoolSecondaryButtonStyle()).accessibilityIdentifier("open-plus")
@@ -329,6 +334,8 @@ struct SettingsView: View {
                     Text("학교 설정과 개인 준비 기록은 이 기기에 저장해요. 학교를 바꿔도 이전 준비 기록은 지우지 않습니다.")
                         .font(.footnote).foregroundStyle(.secondary)
                     Text("구매 복원은 Plus 권한만 복원합니다. 개인 기록은 준비·알림·백업 설정에서 파일로 옮기거나 직접 iCloud 동기화를 실행해 주세요.")
+                        .font(.footnote).foregroundStyle(.secondary)
+                    Text("개인 선생님 메모는 이 기기에만 저장되며 준비 백업·iCloud 동기화·공유에는 포함하지 않아요.")
                         .font(.footnote).foregroundStyle(.secondary)
                     SchoolPrivacyNotice()
                     Button("학교 설정 초기화", role: .destructive) { reset = true }

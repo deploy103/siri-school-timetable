@@ -161,7 +161,7 @@ struct PlannerOptionsView: View {
     private var backupCard: some View {
         VStack(alignment: .leading, spacing: 14) {
             Label("무료 JSON 백업", systemImage: "externaldrive").font(.title2.bold())
-            Text("모든 학교의 규칙·과제·단계·완료 기록을 포함하는 schema 2 파일이에요. 최대 256 KiB이며 구독 없이 이용할 수 있어요.")
+            Text("모든 학교의 준비 일정·내용·규칙·단계·완료 기록을 담아요. 개인 선생님 메모는 제외해요. 최대 256 KiB이며 구독 없이 이용할 수 있어요.")
             Button("백업 내보내기") {
                 do { document = try PlannerBackupDocument(plan: planner.plan); exporting = true }
                 catch { message = "백업을 만들지 못했어요. 기록 형식과 256 KiB 크기 제한을 확인해 주세요." }
@@ -383,7 +383,7 @@ private struct PlannerBackupDocument: FileDocument {
     static func decode(_ data: Data) throws -> PreparationPlan {
         guard data.count <= limit,
               let object = try JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let version = object["version"] as? Int, version == 2 else {
+              let version = object["version"] as? Int, (1...3).contains(version) else {
             throw CocoaError(.fileReadCorruptFile)
         }
         let plan = try JSONDecoder().decode(PreparationPlan.self, from: data)

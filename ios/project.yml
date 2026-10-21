@@ -53,9 +53,37 @@ targets:
   SchoolTodayTests:
     type: bundle.unit-test
     platform: iOS
-    sources: [SchoolTodayTests]
+    sources:
+      - path: SchoolTodayTests
+        excludes:
+          - PlusStoreKitTests.swift
+          - Plus.storekit
     dependencies:
       - target: SchoolToday
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+  StoreKitTestHost:
+    type: application
+    platform: iOS
+    sources:
+      - path: StoreKitTestHost/StoreKitTestHost.swift
+      - path: SchoolToday/PlusStore.swift
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.deploy103.schooltoday.storekittesthost
+        GENERATE_INFOPLIST_FILE: YES
+        TARGETED_DEVICE_FAMILY: "1"
+        SWIFT_ACTIVE_COMPILATION_CONDITIONS: "$(inherited) SCHOOL_STOREKIT_DIAGNOSTICS"
+  SchoolTodayStoreKitTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - path: SchoolTodayTests/PlusStoreKitTests.swift
+      - path: SchoolTodayTests/Plus.storekit
+        buildPhase: resources
+    dependencies:
+      - target: StoreKitTestHost
     settings:
       base:
         GENERATE_INFOPLIST_FILE: YES
@@ -75,16 +103,15 @@ schemes:
         SchoolToday: all
     test:
       targets:
-        - name: SchoolTodayTests
-          skippedTests: [PlusStoreKitTests]
+        - SchoolTodayTests
         - SchoolTodayUITests
   SchoolToday-LocalStoreKit:
     build:
       targets:
-        SchoolToday: [run, test]
+        StoreKitTestHost: [run, test]
     run:
       storeKitConfiguration: SchoolTodayTests/Plus.storekit
     test:
       targets:
-        - name: SchoolTodayTests
-          selectedTests: [PlusStoreKitTests]
+        - name: SchoolTodayStoreKitTests
+          parallelizable: false

@@ -39,9 +39,15 @@ jobs:
 
   ios:
     runs-on: macos-15
-    timeout-minutes: 60
+    timeout-minutes: 90
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_16.4.app/Contents/Developer
     steps:
       - uses: actions/checkout@v4
+      - name: Record native diagnostic toolchain
+        run: |
+          xcodebuild -version
+          xcrun simctl list runtimes
       - name: Install verified XcodeGen 2.46.0
         run: |
           curl -fsSL --retry 3 https://github.com/yonaskolb/XcodeGen/releases/download/2.46.0/xcodegen.zip -o "$RUNNER_TEMP/xcodegen.zip"
@@ -50,11 +56,35 @@ jobs:
           echo "$RUNNER_TEMP/xcodegen-tool/xcodegen/bin" >> "$GITHUB_PATH"
       - run: xcodegen generate --spec ios/project.yml --project ios
       - name: Unsigned iPhone Release build
+        id: release_build
         run: |
           xcodebuild -project ios/SchoolToday.xcodeproj -scheme SchoolToday \
             -configuration Release -destination 'generic/platform=iOS' \
             -derivedDataPath "$RUNNER_TEMP/ios-device" CODE_SIGNING_ALLOWED=NO build
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: native-shortcut-metadata
+          path: |
+            ${{ runner.temp }}/ios-device/Build/Products/Release-iphoneos/SchoolToday.app/Metadata.appintents
+            ${{ runner.temp }}/ios-device/Build/Products/Release-iphoneos/SchoolToday.app/ko.lproj/nlu.appintents
+            ${{ runner.temp }}/ios-device/Build/Intermediates.noindex/SchoolToday.build/Release-iphoneos/SchoolToday.build/SchoolToday.DependencyMetadataFileList
+          retention-days: 7
+      - name: Real-time external yearly delivery control
+        id: yearly_control
+        if: ${{ !cancelled() && steps.release_build.outcome == 'success' }}
+        timeout-minutes: 20
+        run: |
+          device_id=$(xcrun simctl list devices available -j | python3 -c 'import json, sys; print(next(device["udid"] for devices in json.load(sys.stdin)["devices"].values() for device in devices if device["name"].startswith("iPhone")))')
+          xcodebuild -project ios/SchoolToday.xcodeproj -scheme SchoolToday-LocalStoreKit \
+            -configuration Debug -destination "platform=iOS Simulator,id=$device_id" \
+            -destination-timeout 120 -derivedDataPath "$RUNNER_TEMP/ios-build" \
+            -parallel-testing-enabled NO \
+            -only-testing:SchoolTodayStoreKitTests/PlusStoreKitTests/testExternalYearlyDeliveryInRealTime \
+            -resultBundlePath "$RUNNER_TEMP/YearlyDelivery.xcresult" CODE_SIGNING_ALLOWED=NO test
       - name: Native unit and UI tests
+        # Keep independent regressions observable; earlier StoreKit failures still fail the job.
+        if: ${{ !cancelled() }}
         run: |
           device_id=$(xcrun simctl list devices available -j | python3 -c 'import json, sys; print(next(device["udid"] for devices in json.load(sys.stdin)["devices"].values() for device in devices if device["name"].startswith("iPhone")))')
           xcodebuild -project ios/SchoolToday.xcodeproj -scheme SchoolToday \
@@ -62,14 +92,6 @@ jobs:
             -destination-timeout 120 -derivedDataPath "$RUNNER_TEMP/ios-build" \
             -parallel-testing-enabled NO \
             -resultBundlePath "$RUNNER_TEMP/SchoolToday.xcresult" CODE_SIGNING_ALLOWED=NO test
-      - name: Local StoreKit subscription lifecycle
-        run: |
-          device_id=$(xcrun simctl list devices available -j | python3 -c 'import json, sys; print(next(device["udid"] for devices in json.load(sys.stdin)["devices"].values() for device in devices if device["name"].startswith("iPhone")))')
-          xcodebuild -project ios/SchoolToday.xcodeproj -scheme SchoolToday-LocalStoreKit \
-            -configuration Debug -destination "platform=iOS Simulator,id=$device_id" \
-            -destination-timeout 120 -derivedDataPath "$RUNNER_TEMP/ios-build" \
-            -parallel-testing-enabled NO \
-            -resultBundlePath "$RUNNER_TEMP/PlusStoreKit.xcresult" CODE_SIGNING_ALLOWED=NO test
       - name: Export native screenshots
         if: always()
         run: |
@@ -88,5 +110,79 @@ jobs:
           name: native-test-results
           path: |
             ${{ runner.temp }}/SchoolToday.xcresult
-            ${{ runner.temp }}/PlusStoreKit.xcresult
+            ${{ runner.temp }}/YearlyDelivery.xcresult
+          retention-days: 7
+
+  storekit-lifecycle:
+    # A failed diagnostic must not hide the original regression or warm its session.
+    runs-on: macos-15
+    timeout-minutes: 25
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_16.4.app/Contents/Developer
+    steps:
+      - uses: actions/checkout@v4
+      - name: Record lifecycle toolchain
+        run: |
+          xcodebuild -version
+          xcrun simctl list runtimes
+      - name: Install verified XcodeGen 2.46.0
+        run: |
+          curl -fsSL --retry 3 https://github.com/yonaskolb/XcodeGen/releases/download/2.46.0/xcodegen.zip -o "$RUNNER_TEMP/xcodegen.zip"
+          echo "4d9e34b62172d645eed6457cac13fc222569974098ef4ee9c3368bedf0196806  $RUNNER_TEMP/xcodegen.zip" | shasum -a 256 -c -
+          unzip -q "$RUNNER_TEMP/xcodegen.zip" -d "$RUNNER_TEMP/xcodegen-tool"
+          echo "$RUNNER_TEMP/xcodegen-tool/xcodegen/bin" >> "$GITHUB_PATH"
+      - run: xcodegen generate --spec ios/project.yml --project ios
+      - name: Local StoreKit subscription lifecycle
+        timeout-minutes: 20
+        run: |
+          device_id=$(xcrun simctl list devices available -j | python3 -c 'import json, sys; devices=json.load(sys.stdin)["devices"]["com.apple.CoreSimulator.SimRuntime.iOS-18-5"]; print(next(device["udid"] for device in devices if device["name"].startswith("iPhone")))')
+          echo "Lifecycle destination: iOS 18.5 / $device_id"
+          xcodebuild -project ios/SchoolToday.xcodeproj -scheme SchoolToday-LocalStoreKit \
+            -configuration Debug -destination "platform=iOS Simulator,id=$device_id" \
+            -destination-timeout 120 -derivedDataPath "$RUNNER_TEMP/lifecycle-build" \
+            -parallel-testing-enabled NO \
+            -only-testing:SchoolTodayStoreKitTests/PlusStoreKitTests/testLocalSubscriptionLifecycle \
+            -resultBundlePath "$RUNNER_TEMP/PlusStoreKit.xcresult" CODE_SIGNING_ALLOWED=NO test
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: storekit-lifecycle-results
+          path: ${{ runner.temp }}/PlusStoreKit.xcresult
+          retention-days: 7
+
+  storekit-reference:
+    # Independent fresh VM: never launch PlusStore or warm the app's required StoreKit tests.
+    runs-on: macos-15
+    timeout-minutes: 25
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_16.4.app/Contents/Developer
+    steps:
+      - uses: actions/checkout@v4
+      - name: Record reference toolchain
+        run: |
+          xcodebuild -version
+          xcrun simctl list runtimes
+      - name: Install verified XcodeGen 2.46.0
+        run: |
+          curl -fsSL --retry 3 https://github.com/yonaskolb/XcodeGen/releases/download/2.46.0/xcodegen.zip -o "$RUNNER_TEMP/xcodegen.zip"
+          echo "4d9e34b62172d645eed6457cac13fc222569974098ef4ee9c3368bedf0196806  $RUNNER_TEMP/xcodegen.zip" | shasum -a 256 -c -
+          unzip -q "$RUNNER_TEMP/xcodegen.zip" -d "$RUNNER_TEMP/xcodegen-tool"
+          echo "$RUNNER_TEMP/xcodegen-tool/xcodegen/bin" >> "$GITHUB_PATH"
+      - run: xcodegen generate --spec ios/project.yml --project ios
+      - name: Raw StoreKit yearly delivery without app store
+        timeout-minutes: 20
+        run: |
+          device_id=$(xcrun simctl list devices available -j | python3 -c 'import json, sys; devices=json.load(sys.stdin)["devices"]["com.apple.CoreSimulator.SimRuntime.iOS-18-5"]; print(next(device["udid"] for device in devices if device["name"].startswith("iPhone")))')
+          echo "Reference destination: iOS 18.5 / $device_id"
+          xcodebuild -project ios/SchoolToday.xcodeproj -scheme SchoolToday-LocalStoreKit \
+            -configuration Debug -destination "platform=iOS Simulator,id=$device_id" \
+            -destination-timeout 120 -derivedDataPath "$RUNNER_TEMP/raw-storekit-build" \
+            -parallel-testing-enabled NO \
+            -only-testing:SchoolTodayStoreKitTests/PlusStoreKitTests/testRawStoreKitExternalYearlyDelivery \
+            -resultBundlePath "$RUNNER_TEMP/RawStoreKit.xcresult" CODE_SIGNING_ALLOWED=NO test
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: raw-storekit-reference-results
+          path: ${{ runner.temp }}/RawStoreKit.xcresult
           retention-days: 7

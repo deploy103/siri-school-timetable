@@ -1,7 +1,7 @@
 import { MemoryCache } from "@/lib/cache";
 import type { EducationOfficeCode } from "@/lib/education-offices";
 import { AppError } from "@/lib/errors";
-import type { Lesson, Meal, MealResponse, School, SchoolClass, SchoolKind, TimetableResponse } from "@/lib/types";
+import type { Lesson, Meal, MealResponse, School, SchoolClass, SchoolEvent, SchoolEventsResponse, SchoolKind, TimetableResponse } from "@/lib/types";
 import type { MealQuery, TimetableQuery } from "@/lib/schemas";
 import { formatKstLookupTime } from "@/lib/date";
 import { HANSEI_SCHOOL, normalizeSubjectName, type HanseiTimetableRow } from "@/lib/teacher-timetable";
@@ -15,6 +15,7 @@ const DATASETS: Readonly<Record<SchoolKind, string>> = {
   특수학교: "spsTimetable",
 };
 const MEAL_DATASET = "mealServiceDietInfo";
+const SCHEDULE_DATASET = "SchoolSchedule";
 
 const MOCK_SCHOOLS: readonly School[] = [
   {
@@ -84,6 +85,7 @@ const schoolCache = new MemoryCache<School[]>(200);
 const classCache = new MemoryCache<SchoolClass[]>(300);
 const timetableCache = new MemoryCache<TimetableResponse>(500);
 const mealCache = new MemoryCache<MealResponse>(500);
+const schoolEventsCache = new MemoryCache<SchoolEventsResponse>(500);
 const hanseiCatalogCache = new MemoryCache<HanseiTimetableRow[]>(8);
 const hanseiTodayCache = new MemoryCache<HanseiTodaySnapshot>(8);
 const MAX_RESPONSE_BYTES = 2_000_000;
@@ -361,6 +363,28 @@ function matchesMealRequest(row: JsonRecord, query: MealQuery, date: string): bo
   });
 }
 
+export function parseSchoolEvents(payload: unknown): SchoolEvent[] {
+  return extractNeisRows(payload, SCHEDULE_DATASET).flatMap((row) => {
+    const name = neisMultilineText(stringField(row, "EVENT_NM"));
+    if (!name) return [];
+    return [{
+      name,
+      content: neisMultilineText(stringField(row, "EVENT_CNTNT")),
+      lessonDayType: stringField(row, "SBTR_DD_SC_NM"),
+      dayNightCourse: stringField(row, "DGHT_CRSE_SC_NM"),
+      schoolCourse: stringField(row, "SCHUL_CRSE_SC_NM"),
+      gradeFlags: [
+        stringField(row, "ONE_GRADE_EVENT_YN"),
+        stringField(row, "TW_GRADE_EVENT_YN"),
+        stringField(row, "THREE_GRADE_EVENT_YN"),
+        stringField(row, "FR_GRADE_EVENT_YN"),
+        stringField(row, "FIV_GRADE_EVENT_YN"),
+        stringField(row, "SIX_GRADE_EVENT_YN"),
+      ] as SchoolEvent["gradeFlags"],
+    }];
+  });
+}
+
 function combineSubjects(subjects: string[]): string {
   const ordered = subjects.sort((left, right) => left.localeCompare(right, "ko-KR"));
   if (ordered.length === 1) return ordered[0] ?? "";
@@ -606,6 +630,42 @@ export class NeisClient {
     return { date, school: { name: schoolName }, meals };
   }
 
+  async getSchoolEvents(query: MealQuery, date: string): Promise<SchoolEventsResponse> {
+    if (this.isMockMode) {
+      const school = MOCK_SCHOOLS.find(
+        (item) => item.officeCode === query.officeCode && item.schoolCode === query.schoolCode,
+      );
+      if (!school) throw new AppError("NOT_FOUND", 404, "학교 설정을 찾을 수 없습니다. 학교를 다시 검색해 설정해 주세요.");
+      return { date, school: { name: school.name }, events: [{
+        name: "예시 학사일정 (실제 일정 아님)", content: "명시적 모의 모드의 예시입니다.",
+        lessonDayType: "해당없음", dayNightCourse: "주간", schoolCourse: school.kind,
+        gradeFlags: ["Y", "Y", "Y", "*", "*", "*"],
+      }] };
+    }
+    this.assertConfigured();
+    const rows = (await this.requestAllRows(SCHEDULE_DATASET, {
+      ATPT_OFCDC_SC_CODE: query.officeCode,
+      SD_SCHUL_CODE: query.schoolCode,
+      AA_YMD: date.replaceAll("-", ""),
+    })).filter((row) =>
+      stringField(row, "ATPT_OFCDC_SC_CODE") === query.officeCode &&
+      stringField(row, "SD_SCHUL_CODE") === query.schoolCode &&
+      stringField(row, "AA_YMD") === date.replaceAll("-", ""),
+    );
+    let schoolName = rows.map((row) => stringField(row, "SCHUL_NM")).find(Boolean);
+    if (!schoolName) {
+      const payload = await this.request("schoolInfo", {
+        ATPT_OFCDC_SC_CODE: query.officeCode, SD_SCHUL_CODE: query.schoolCode,
+        pIndex: "1", pSize: "5",
+      });
+      schoolName = parseSchools(payload).find((school) =>
+        school.officeCode === query.officeCode && school.schoolCode === query.schoolCode,
+      )?.name;
+      if (!schoolName) throw new AppError("NOT_FOUND", 404, "학교 설정을 찾을 수 없습니다. 학교를 다시 검색해 설정해 주세요.");
+    }
+    return { date, school: { name: schoolName }, events: parseSchoolEvents({ [SCHEDULE_DATASET]: [{ row: rows }] }) };
+  }
+
   async getHanseiTimetableRows(from: string, to: string): Promise<HanseiTimetableRow[]> {
     if (this.isMockMode) return mockHanseiRows();
     this.assertConfigured();
@@ -638,7 +698,8 @@ export class NeisClient {
       !Object.values(DATASETS).includes(dataset) &&
       dataset !== "schoolInfo" &&
       dataset !== "classInfo" &&
-      dataset !== MEAL_DATASET
+      dataset !== MEAL_DATASET &&
+      dataset !== SCHEDULE_DATASET
     ) {
       throw new AppError("INVALID_INPUT", 400, "지원하지 않는 교육정보 요청입니다.");
     }
@@ -794,6 +855,11 @@ export async function getSchoolClasses(
   );
 }
 
+export async function getSchoolEvents(query: MealQuery, date: string): Promise<SchoolEventsResponse> {
+  const key = `${query.officeCode}:${query.schoolCode}:${date}`;
+  return schoolEventsCache.getOrLoad(key, 10 * 60_000, () => new NeisClient().getSchoolEvents(query, date));
+}
+
 export interface HanseiTodaySnapshot {
   rows: HanseiTimetableRow[];
   queriedAt: string;
@@ -827,6 +893,7 @@ export function clearNeisCaches(): void {
   classCache.clear();
   timetableCache.clear();
   mealCache.clear();
+  schoolEventsCache.clear();
   hanseiCatalogCache.clear();
   hanseiTodayCache.clear();
 }
