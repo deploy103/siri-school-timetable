@@ -215,7 +215,13 @@ final class PlannerStore: ObservableObject {
         let previousStages = plan.stages.filter { $0.taskID == task.id }
         // Expiration permits retaining or removing saved features, never adding new ones.
         guard (task.extraReminders ?? []).allSatisfy({ (previous?.extraReminders ?? []).contains($0) }),
-              stages.allSatisfy({ previousStages.contains($0) }) else { throw PlannerAccessError.plusRequired }
+              stages.allSatisfy({ stage in
+                  previousStages.contains { saved in
+                      var retained = saved
+                      if stage.reminder == nil { retained.reminder = nil }
+                      return stage == retained
+                  }
+              }) else { throw PlannerAccessError.plusRequired }
     }
     func addTask(_ task: PreparationTask, stages: [PreparationStage] = []) throws {
         guard task.selection == settings.planningKey, SchoolCalendar.date(task.date) != nil,
