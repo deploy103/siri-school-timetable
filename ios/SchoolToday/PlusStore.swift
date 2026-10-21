@@ -157,6 +157,9 @@ final class PlusStore: ObservableObject {
                     message = "결제를 확인하지 못했어요. 구입 복원을 시도해 주세요."
                     return
                 }
+                #if SCHOOL_STOREKIT_DIAGNOSTICS
+                Self.diagnostic("purchase verified before refresh \(Self.diagnosticTransaction(transaction))")
+                #endif
                 await refresh()
                 await transaction.finish()
                 message = isPlus ? "Plus가 활성화되었어요." : "결제는 확인했지만 활성 구독이 없어요. 구입 복원을 시도해 주세요."
