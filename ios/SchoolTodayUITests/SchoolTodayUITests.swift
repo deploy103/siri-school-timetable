@@ -24,9 +24,19 @@ final class SchoolTodayUITests: XCTestCase {
             if element.exists && element.frame.maxY < app.frame.midY { app.swipeDown() }
             else { app.swipeUp() }
         }
-        XCTAssertTrue(element.waitForExistence(timeout: 10))
-        XCTAssertTrue(element.isHittable)
+        XCTAssertTrue(element.waitForExistence(timeout: 10), app.debugDescription)
+        XCTAssertTrue(element.isHittable, "Target: \(element.debugDescription)\n\(app.debugDescription)")
         element.tap()
+    }
+
+    private func finishInput(_ identifier: String, in app: XCUIApplication) {
+        let done = app.buttons[identifier]
+        XCTAssertTrue(done.waitForExistence(timeout: 5), app.debugDescription)
+        XCTAssertTrue(done.isHittable, app.debugDescription)
+        done.tap()
+        let dismissed = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"),
+                                                 object: app.keyboards.firstMatch)
+        XCTAssertEqual(XCTWaiter.wait(for: [dismissed], timeout: 3), .completed, app.debugDescription)
     }
 
     private func chooseSchool(_ app: XCUIApplication, name: String = "테스트고등학교") {
@@ -207,6 +217,7 @@ final class SchoolTodayUITests: XCTestCase {
         capture("planner-link-subject", app: app)
         tap(app.buttons["save-preparation"], in: app)
         tap(app.tabBars.buttons["준비"], in: app)
+        tap(app.buttons["날짜별 준비"], in: app)
         let item = app.buttons["교재"]
         XCTAssertTrue(item.waitForExistence(timeout: 5))
         XCTAssertEqual(item.value as? String, "미완료")
@@ -225,6 +236,7 @@ final class SchoolTodayUITests: XCTestCase {
         app.launch()
         XCTAssertTrue(app.tabBars.buttons["오늘"].waitForExistence(timeout: 10))
         tap(app.tabBars.buttons["준비"], in: app)
+        tap(app.buttons["날짜별 준비"], in: app)
         XCTAssertEqual(item.value as? String, "완료")
         tap(app.buttons["add-preparation"], in: app)
         let title = app.textFields["preparation-title"]
@@ -246,6 +258,104 @@ final class SchoolTodayUITests: XCTestCase {
         XCTAssertTrue(app.textFields["실제 수업 과목"].waitForExistence(timeout: 5))
         capture("planner-correction", app: app)
         tap(app.navigationBars["내 수업 수정"].buttons["취소"], in: app)
+    }
+
+    func testAssessmentsAndPrivateTeacherNotesPersistWithoutSubscription() {
+        let app = launch()
+        chooseClass(app, guide: false)
+        tap(app.tabBars.buttons["준비"], in: app)
+        XCTAssertTrue(app.staticTexts["직접 적은 일정이 없어요."].waitForExistence(timeout: 5))
+        capture("planner-upcoming-empty", app: app)
+        tap(app.buttons["add-preparation"], in: app)
+        tap(app.buttons["숙제"], in: app)
+        XCTAssertTrue(app.buttons["숙제"].isSelected)
+        tap(app.buttons["시험"], in: app)
+        XCTAssertTrue(app.buttons["시험"].isSelected)
+        tap(app.buttons["수행평가"], in: app)
+        XCTAssertTrue(app.buttons["수행평가"].isSelected)
+        let title = app.textFields["preparation-title"]
+        title.tap(); title.typeText("영어 발표")
+        capture("planner-assessment-keyboard", app: app)
+        finishInput("preparation-input-done", in: app)
+        let subject = app.textFields["preparation-subject"]
+        tap(subject, in: app); subject.typeText("영어")
+        finishInput("preparation-input-done", in: app)
+        let notes = app.descendants(matching: .any).matching(identifier: "preparation-notes").firstMatch
+        tap(notes, in: app); notes.typeText("2장 범위, 파일 제출")
+        finishInput("preparation-input-done", in: app)
+        capture("planner-assessment-editor", app: app)
+        tap(app.buttons["save-preparation"], in: app)
+        let edit = app.buttons["영어 발표 일정 수정"]
+        XCTAssertTrue(edit.waitForExistence(timeout: 5))
+        XCTAssertFalse(app.navigationBars["Plus"].exists)
+        capture("planner-upcoming-assessment", app: app)
+        tap(app.buttons["영어 발표 완료로 표시"], in: app)
+        tap(app.buttons["완료한 일정 · 1개"], in: app)
+        XCTAssertTrue(app.buttons["영어 발표 완료 취소"].waitForExistence(timeout: 5))
+        capture("planner-upcoming-completed", app: app)
+        tap(app.buttons["영어 발표 완료 취소"], in: app)
+        tap(edit, in: app)
+        XCTAssertEqual(title.value as? String, "영어 발표")
+        XCTAssertTrue(app.buttons["수행평가"].isSelected)
+        XCTAssertEqual(notes.value as? String, "2장 범위, 파일 제출")
+        tap(app.navigationBars["일정 수정"].buttons["취소"], in: app)
+        openSettings(app)
+        tap(app.buttons["teacher-notes"], in: app)
+        tap(app.buttons["개인 메모 추가"], in: app)
+        let uniqueSubject = "예제 과학 " + String(UUID().uuidString.prefix(6))
+        let teacherSubject = app.textFields["과목 (필수, 80자까지)"]
+        tap(teacherSubject, in: app); teacherSubject.typeText(uniqueSubject)
+        finishInput("teacher-note-input-done", in: app)
+        let teacher = app.textFields["선생님 이름 (필수, 80자까지)"]
+        tap(teacher, in: app); teacher.typeText("예제 선생님")
+        finishInput("teacher-note-input-done", in: app)
+        let room = app.textFields["교실 (80자까지)"]
+        tap(room, in: app); room.typeText("과학실")
+        finishInput("teacher-note-input-done", in: app)
+        tap(app.buttons["저장"], in: app)
+        XCTAssertTrue(app.staticTexts[uniqueSubject].waitForExistence(timeout: 5))
+        capture("planner-private-teacher-notes", app: app)
+        app.terminate()
+        app.launchArguments = ["--ui-testing"]
+        app.launch()
+        XCTAssertTrue(app.tabBars.buttons["오늘"].waitForExistence(timeout: 10))
+        tap(app.tabBars.buttons["준비"], in: app)
+        tap(edit, in: app)
+        XCTAssertTrue(app.buttons["수행평가"].isSelected)
+        XCTAssertEqual(notes.value as? String, "2장 범위, 파일 제출")
+        tap(app.navigationBars["일정 수정"].buttons["취소"], in: app)
+        openSettings(app)
+        tap(app.buttons["teacher-notes"], in: app)
+        XCTAssertTrue(app.staticTexts[uniqueSubject].waitForExistence(timeout: 5))
+    }
+
+    func testOfficialCalendarRetriesWithoutClaimingHolidayAndRetainsCourseScopes() {
+        let app = launch(extra: ["--fail-first-calendar"])
+        chooseClass(app, guide: false)
+        tap(app.tabBars.buttons["주간"], in: app)
+        tap(app.buttons["school-calendar"], in: app)
+        let error = app.staticTexts["학교 학사일정에 연결할 수 없습니다."]
+        XCTAssertTrue(error.waitForExistence(timeout: 10), app.debugDescription)
+        let empty = app.staticTexts.matching(NSPredicate(format: "label == %@", "등록된 학교 일정이 없습니다. 휴일 여부는 학교 안내를 확인해 주세요."))
+        XCTAssertEqual(empty.count, 0)
+        capture("planner-school-calendar-error", app: app)
+        tap(app.buttons["다시 시도"], in: app)
+        let events = app.staticTexts.matching(NSPredicate(format: "label == %@", "예시 학교 행사"))
+        XCTAssertTrue(events.firstMatch.waitForExistence(timeout: 10), app.debugDescription)
+        XCTAssertEqual(events.count, 2)
+        XCTAssertTrue(app.staticTexts["오전 안내 · 실제 일정 아님"].exists)
+        XCTAssertTrue(app.staticTexts["오후 안내 · 실제 일정 아님"].exists)
+        let details = app.buttons.matching(NSPredicate(format: "label == %@", "NEIS 원문 적용 정보"))
+        tap(details.element(boundBy: 0), in: app)
+        XCTAssertTrue(app.staticTexts["주야 과정: 주간"].exists)
+        XCTAssertTrue(app.staticTexts["1–6학년 원문 값: Y / N / * / * / * / *"].exists)
+        capture("planner-school-calendar-events", app: app)
+        tap(details.element(boundBy: 1), in: app)
+        XCTAssertTrue(app.staticTexts["주야 과정: 야간"].exists)
+        XCTAssertTrue(app.staticTexts["1–6학년 원문 값: N / Y / * / * / * / *"].exists)
+        XCTAssertEqual(empty.count, 6)
+        tap(empty.firstMatch, in: app)
+        capture("planner-school-calendar-empty-day", app: app)
     }
 
     func testRedesignedCalendarPreparationOptionsAndPlusCatalog() {
@@ -283,7 +393,8 @@ final class SchoolTodayUITests: XCTestCase {
         XCTAssertTrue(date.waitForExistence(timeout: 5))
         XCTAssertEqual(date.value as? String, selected)
         capture("planner-calendar-confirmed-date", app: app)
-        tap(app.buttons["과제·시험 마감"], in: app)
+        tap(app.buttons["수행평가"], in: app)
+        tap(app.buttons["추가 준비 기능 · Plus"], in: app)
         tap(app.buttons["발표 단계 제안"], in: app)
         XCTAssertTrue(app.textFields["준비 단계"].firstMatch.waitForExistence(timeout: 5))
         app.swipeUp()
@@ -310,35 +421,40 @@ final class SchoolTodayUITests: XCTestCase {
         capture("planner-plus-hero", app: app)
         let retry = app.buttons["가격 다시 불러오기"]
         let refresh = app.buttons["가격 새로고침"]
-        // Use the real catalog; a configured StoreKit environment can legitimately return products.
-        let ready = NSPredicate(format: "exists == true AND enabled == true")
-        let finished = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
-            (retry.exists && retry.isEnabled) || (refresh.exists && refresh.isEnabled)
+        let loading = app.descendants(matching: .any).matching(identifier: "구독 가격을 확인하고 있어요…").firstMatch
+        let subscribe = app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "구독하기")).firstMatch
+        let trial = app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "무료 체험 대상")).firstMatch
+        let status = app.staticTexts["plus-status"]
+        // This layout/navigation test must also work while Apple's real catalog is pending.
+        // Local StoreKit tests cover deterministic catalog failure and successful retry.
+        let pricing = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+            if loading.exists {
+                // Products may arrive before the introductory-offer eligibility check finishes.
+                return ((retry.exists && !retry.isEnabled) || (refresh.exists && !refresh.isEnabled))
+                    && (!subscribe.exists || !subscribe.isEnabled)
+            }
+            if retry.exists && retry.isEnabled {
+                return status.exists && status.label.contains("불러오지 못했어요")
+                    && !subscribe.exists && !trial.exists
+            }
+            return refresh.exists && refresh.isEnabled && subscribe.exists
         }, object: nil)
-        XCTAssertEqual(XCTWaiter.wait(for: [finished], timeout: 20), .completed)
-        if retry.exists {
-            XCTAssertTrue(app.staticTexts["plus-status"].waitForExistence(timeout: 5))
-            tap(retry, in: app)
-            expectation(for: ready, evaluatedWith: retry)
-            waitForExpectations(timeout: 20)
-            XCTAssertTrue(app.staticTexts["plus-status"].label.contains("불러오지 못했어요"))
-            XCTAssertFalse(app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "구독하기")).firstMatch.exists)
-            XCTAssertFalse(app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "무료 체험 대상")).firstMatch.exists)
-        } else {
-            XCTAssertTrue(app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "구독하기")).firstMatch.exists)
-        }
+        XCTAssertEqual(XCTWaiter.wait(for: [pricing], timeout: 5), .completed)
+        if retry.exists && retry.isEnabled { tap(retry, in: app) }
         capture("planner-plus-catalog-result", app: app)
+        XCTAssertTrue(app.navigationBars["Plus"].buttons["닫기"].isEnabled)
         tap(app.navigationBars["Plus"].buttons["닫기"], in: app)
         XCTAssertTrue(app.navigationBars["준비 설정"].waitForExistence(timeout: 5))
         tap(app.buttons["백업 내보내기"], in: app)
-        // iOS may expose a non-hittable, invisible Cancel in the picker AX tree.
-        // The system action varies by OS and language (Save/Move); verify our export filename instead.
-        let exportName = app.textFields.matching(NSPredicate(format: "value BEGINSWITH %@", "school-preparation-backup")).firstMatch
-        XCTAssertTrue(exportName.waitForExistence(timeout: 10), app.debugDescription)
+        // Files can omit the filename field in a previously used location.
+        // Check the export action without depending on its localized Save/Move label.
+        let pickerBar = app.navigationBars["FullDocumentManagerViewControllerNavigationBar"]
+        XCTAssertTrue(pickerBar.waitForExistence(timeout: 10), app.debugDescription)
+        let export = pickerBar.buttons["DOCPicker.actionButton"]
+        XCTAssertTrue(export.isEnabled)
+        XCTAssertTrue(export.isHittable)
         capture("planner-backup-export", app: app)
         // The picker can start below the app's top edge; drag its own header, not the obscured app.
-        let pickerBar = app.navigationBars["FullDocumentManagerViewControllerNavigationBar"]
-        XCTAssertTrue(pickerBar.waitForExistence(timeout: 5), app.debugDescription)
         pickerBar.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.2))
             .press(forDuration: 0.1, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.75)))
         let dismissed = XCTNSPredicateExpectation(predicate: NSPredicate(format: "hittable == true"),
@@ -356,6 +472,7 @@ final class SchoolTodayUITests: XCTestCase {
         capture("planner-large-editor", app: app)
         tap(app.buttons["save-preparation"], in: app)
         tap(app.tabBars.buttons["준비"], in: app)
+        tap(app.buttons["날짜별 준비"], in: app)
         tap(app.buttons["교재"], in: app)
         XCTAssertEqual(app.buttons["교재"].value as? String, "완료")
         capture("planner-large-preparation", app: app)

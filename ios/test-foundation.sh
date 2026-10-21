@@ -30,6 +30,10 @@ import sys
 
 root, out = map(Path, sys.argv[1:])
 source = (root / 'ios/SchoolTodayTests/SchoolTodayTests.swift').read_text()
+teacher_tests = (root / 'ios/SchoolTodayTests/TeacherNotesTests.swift').read_text().replace('import XCTest', '').replace('@testable import SchoolToday', '')
+teacher_names = re.findall(r'^    func (test\w+)\(', teacher_tests, re.M)
+event_tests = (root / 'ios/SchoolTodayTests/SchoolEventsTests.swift').read_text().replace('import XCTest', '').replace('@testable import SchoolToday', '')
+event_names = re.findall(r'^    func (test\w+)\(', event_tests, re.M)
 excluded = {'testAppIntentsFailWithSetupGuidanceWhenSchoolIsMissing'}
 names = [name for name in re.findall(r'^    func (test\w+)\(', source, re.M) if name not in excluded]
 methods = [re.search(r'^    (?:@MainActor\n    )?func ' + name + r'\b.*?^    \}', source, re.M | re.S).group() for name in names]
@@ -63,19 +67,24 @@ actor PreparationNotifications {
 '''
 planner = (root / 'ios/SchoolToday/PlannerStore.swift').read_text().replace('import Combine', '').replace('import WidgetKit', '')
 runner = shims + '\n' + store + '\n' + model + '\n' + planner + '\nfinal class FoundationTests: XCTestCase {\n'
-runner += settings + '\n\n' + '\n\n'.join(methods) + '\n}\n' + transport
+runner += settings + '\n\n' + '\n\n'.join(methods) + '\n}\n' + transport + '\n' + teacher_tests + '\n' + event_tests
 runner += '\nXCTMain([testCase([\n'
 runner += ',\n'.join('    ("' + name + '", ' + ('asyncTest(FoundationTests.' + name + ')' if 'async throws' in method else 'FoundationTests.' + name) + ')' for name, method in zip(names, methods))
+runner += '\n]), testCase([\n'
+runner += ',\n'.join('    ("' + name + '", TeacherNotesTests.' + name + ')' for name in teacher_names)
+runner += '\n]), testCase([\n'
+runner += ',\n'.join('    ("' + name + '", asyncTest(SchoolEventsTests.' + name + '))' for name in event_names)
 runner += '\n])])\n'
 (out / 'main.swift').write_text(runner)
 for name in ['SchoolAPI', 'PreviewTransport']:
     original = (root / ('ios/SchoolToday/' + name + '.swift')).read_text()
     (out / (name + '.swift')).write_text('import FoundationNetworking\n' + original)
-print(f'Foundation-only: {len(names)} unchanged XCTest methods; actual model/API/store bodies.', flush=True)
+print(f'Foundation-only: {len(names)} model/API/store tests + {len(teacher_names)} teacher-note tests + {len(event_names)} school-calendar tests; actual Foundation bodies.', flush=True)
 print('Observation/network monitor/widget/notification substitutes; no SwiftUI, OS notifications, WidgetKit, iOS SDK, or Siri verification.', flush=True)
 print('iOS-only test excluded: ' + ', '.join(sorted(excluded)), flush=True)
 PY
 
 "$swiftc" -swift-version 5 -DDEBUG "$root/ios/SchoolToday/Models.swift" "$root/ios/SchoolToday/PlannerModels.swift" \
+  "$root/ios/SchoolToday/TeacherNotes.swift" "$root/ios/SchoolToday/SchoolEvents.swift" \
   "$run/SchoolAPI.swift" "$run/PreviewTransport.swift" "$run/main.swift" -o "$run/tests"
 "$run/tests"

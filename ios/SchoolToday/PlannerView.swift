@@ -8,6 +8,7 @@ struct SchoolDashboard: View {
     @StateObject private var planner: PlannerStore
     @ObservedObject private var plus = PlusStore.shared
     @State private var tab = 0
+    @State private var preparationMode = 0
     @State private var day = SchoolCalendar.key()
     @State private var currentDay = SchoolCalendar.key()
     @State private var now = Date()
@@ -15,6 +16,7 @@ struct SchoolDashboard: View {
     @State private var siri = false
     @State private var editor: PreparationDraft?
     @State private var deletingTask: PreparationTask?
+    @State private var deletionError: String?
     @State private var correctingLesson: LessonCorrection?
     private let timer = Timer.publish(every: 60, on: .main, in: .common).autoconnect()
 
@@ -44,6 +46,11 @@ struct SchoolDashboard: View {
             NavigationStack {
                 page("planner-week") {
                     weekNavigation
+                    NavigationLink {
+                        SchoolEventsView(settings: planner.settings, api: planner.api)
+                    } label: {
+                        Label("학교 학사일정", systemImage: "calendar.badge.clock")
+                    }.buttonStyle(SchoolSecondaryButtonStyle()).accessibilityIdentifier("school-calendar")
                     Text("수업을 누르면 준비물을 연결할 수 있어요.").font(.subheadline).foregroundStyle(.secondary)
                     ForEach(SchoolCalendar.week(containing: day), id: \.self) { date in
                         VStack(alignment: .leading, spacing: 14) {
@@ -69,13 +76,19 @@ struct SchoolDashboard: View {
             }.tabItem { Label("주간", systemImage: "calendar") }.tag(1)
             NavigationStack {
                 page("planner-preparation") {
-                    datePicker
-                    preparationList
-                    Button { editor = PreparationDraft(date: day) } label: {
-                        Label("준비물·마감 추가", systemImage: "plus")
+                    Picker("준비 보기", selection: $preparationMode) {
+                        Text("다가오는 일정").tag(0)
+                        Text("날짜별 준비").tag(1)
+                    }.pickerStyle(.segmented)
+                    Button { editor = PreparationDraft(date: preparationMode == 0 ? SchoolCalendar.key(now) : day) } label: {
+                        Label("일정 추가", systemImage: "plus")
                     }.buttonStyle(SchoolPrimaryButtonStyle()).accessibilityIdentifier("add-preparation")
+                    if preparationMode == 0 { upcomingTasks }
+                    else {
+                        datePicker
+                        preparationList
+                    }
                     linkedSubjects
-                    if !planner.tasks.isEmpty { savedTasks }
                 }.navigationTitle("준비").toolbar { settingsButton }
             }.tabItem { Label("준비", systemImage: "checklist") }.tag(2)
         }
@@ -116,9 +129,15 @@ struct SchoolDashboard: View {
         }
         .confirmationDialog("이 일정을 삭제할까요?", isPresented: Binding(get: { deletingTask != nil }, set: { if !$0 { deletingTask = nil } }), titleVisibility: .visible) {
             if let task = deletingTask {
-                Button("일정 삭제", role: .destructive) { try? planner.deleteTask(task); deletingTask = nil }
+                Button("일정 삭제", role: .destructive) {
+                    do { try planner.deleteTask(task); deletingTask = nil }
+                    catch { deletionError = error.localizedDescription }
+                }
             }
         }
+        .alert("일정을 삭제하지 못했어요", isPresented: Binding(get: { deletionError != nil }, set: { if !$0 { deletionError = nil } })) {
+            Button("확인") { deletionError = nil }
+        } message: { Text(deletionError ?? "") }
         .environment(\.timeZone, SchoolCalendar.calendar.timeZone)
     }
 
@@ -143,7 +162,7 @@ struct SchoolDashboard: View {
                     Button("다시 시도") { refresh += 1 }.frame(minHeight: 44)
                 }
                 content()
-                Text("출처 NEIS · 학교에서 받은 자료를 기준으로 표시해요.")
+                Text("시간표·급식 출처 NEIS · 준비 일정·과목 수정은 직접 기록한 내용이에요.")
                     .font(.caption).foregroundStyle(.secondary)
             }.frame(maxWidth: 600, alignment: .leading).padding(20).frame(maxWidth: .infinity)
         }
@@ -178,7 +197,7 @@ struct SchoolDashboard: View {
     private var preparationSummary: some View {
         let items = planner.occurrences(on: day)
         let remaining = items.filter { !$0.completed }.count
-        return Button { tab = 2 } label: {
+        return Button { preparationMode = 1; tab = 2 } label: {
             VStack(alignment: .leading, spacing: 10) {
                 HStack {
                     Label("등교 준비", systemImage: "bag")
@@ -354,34 +373,77 @@ struct SchoolDashboard: View {
             if !planner.plusEnabled { NavigationLink("Plus · 여러 과목과 마감 준비") { PlusView() } }
         }.modifier(SchoolCard())
     }
-    private var savedTasks: some View {
+    private var upcomingTasks: some View {
+        let incomplete = planner.plan.scheduledTasks(selection: planner.settings.planningKey)
+        let completed = planner.plan.scheduledTasks(selection: planner.settings.planningKey, completed: true)
+        return VStack(alignment: .leading, spacing: 16) {
+            Text("직접 기록한 일정").font(.title3.bold())
+            Text("수행평가·시험·숙제를 적어 두세요. 학교 자료를 받지 못해도 확인할 수 있어요.")
+                .font(.footnote).foregroundStyle(.secondary)
+            if incomplete.isEmpty {
+                Text(completed.isEmpty ? "직접 적은 일정이 없어요." : "등록한 미완료 일정이 없어요.").font(.headline)
+            } else {
+                ForEach(PreparationTask.ScheduleGroup.allCases, id: \.self) { group in
+                    let tasks = incomplete.filter { $0.scheduleGroup(relativeTo: now) == group }
+                    if !tasks.isEmpty {
+                        if group == .later {
+                            DisclosureGroup("이후 일정 · \(tasks.count)개") { taskRows(tasks) }
+                        } else {
+                            Text("\(group.rawValue) · \(tasks.count)개").font(.headline).padding(.top, 8)
+                            taskRows(tasks)
+                        }
+                    }
+                }
+                if !incomplete.contains(where: { $0.scheduleGroup(relativeTo: now) == .today || $0.scheduleGroup(relativeTo: now) == .week }) {
+                    Text("오늘부터 앞으로 7일 안에 등록한 일정이 없어요.").font(.footnote).foregroundStyle(.secondary)
+                }
+            }
+            if !completed.isEmpty {
+                DisclosureGroup("완료한 일정 · \(completed.count)개") { taskRows(completed) }
+            }
+        }.modifier(SchoolCard())
+    }
+    private func taskRows(_ tasks: [PreparationTask]) -> some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("직접 등록한 일정").font(.headline)
-            ForEach(planner.tasks.sorted { $0.date < $1.date }) { task in
-                HStack {
+            ForEach(tasks) { task in
+                let completed = planner.plan.completed.contains(task.completionID)
+                HStack(alignment: .top, spacing: 8) {
+                    Button {
+                        planner.toggle(PreparationOccurrence(id: task.completionID, title: task.title, subject: task.subject, date: task.date, automatic: false, completed: completed))
+                    } label: {
+                        Image(systemName: completed ? "checkmark.circle.fill" : "circle").font(.title2)
+                            .frame(minWidth: 44, minHeight: 44)
+                    }.buttonStyle(.plain).foregroundStyle(SchoolDesign.blue)
+                        .accessibilityLabel("\(task.title) \(completed ? "완료 취소" : "완료로 표시")")
                     VStack(alignment: .leading, spacing: 4) {
-                        Button(task.title) { editor = PreparationDraft(date: task.date, subject: task.subject, task: task) }
-                            .buttonStyle(.plain).font(.headline).frame(minHeight: 44).accessibilityLabel("\(task.title) 일정 수정")
+                        Button { editor = PreparationDraft(date: task.date, subject: task.subject, task: task) } label: {
+                            VStack(alignment: .leading, spacing: 6) {
+                                Text(task.title).font(.headline).strikethrough(completed)
+                                Text([task.kindLabel, task.subject, completed ? "완료" : task.relativeDate(to: now)].filter { !$0.isEmpty }.joined(separator: " · "))
+                                    .font(.subheadline).foregroundStyle(.secondary)
+                                Text(SchoolCalendar.label(task.date)).font(.caption).foregroundStyle(.secondary)
+                                if let notes = task.notes, !notes.isEmpty { Text(notes).font(.footnote).lineLimit(3) }
+                            }.frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                                .fixedSize(horizontal: false, vertical: true).contentShape(Rectangle())
+                        }.buttonStyle(.plain).accessibilityLabel("\(task.title) 일정 수정")
+                            .accessibilityValue([task.kindLabel, task.subject, completed ? "완료" : task.relativeDate(to: now), SchoolCalendar.label(task.date), task.notes ?? ""].filter { !$0.isEmpty }.joined(separator: " · "))
                         if let reminder = task.reminder { Text("알림 \(reminder.formatted(date: .abbreviated, time: .shortened))").font(.caption).foregroundStyle(.secondary) }
-                        Text("\(SchoolCalendar.label(task.date, format: "M.d E")) · \(task.kind == .deadline ? "마감" : "준비물")")
-                            .font(.caption).foregroundStyle(.secondary)
                         let stages = planner.plan.stages.filter { $0.taskID == task.id }
                         ForEach(stages) { stage in
                             Text("\(SchoolCalendar.label(stage.date, format: "M.d")) · \(stage.title)\(planner.plan.completed.contains("stage:\(stage.id.uuidString)") ? " · 완료" : "")")
                                 .font(.caption).foregroundStyle(.secondary)
                         }
                     }
-                    Spacer()
                     Button(role: .destructive) { deletingTask = task } label: { Image(systemName: "trash") }
                         .frame(minWidth: 44, minHeight: 44).accessibilityLabel("\(task.title) 삭제")
                 }
             }
-        }.modifier(SchoolCard())
+        }
     }
     private func openNotificationDate() {
         guard let value = UserDefaults.standard.string(forKey: "schooltoday.pending-preparation-date") else { return }
         UserDefaults.standard.removeObject(forKey: "schooltoday.pending-preparation-date")
-        if SchoolCalendar.date(value) != nil { day = value; tab = 2 }
+        if SchoolCalendar.date(value) != nil { day = value; preparationMode = 1; tab = 2 }
     }
 }
 
@@ -401,6 +463,8 @@ private struct PreparationEditor: View {
     @State var draft: PreparationDraft
     @State private var title = ""
     @State private var kind: PreparationTask.Kind = .item
+    @State private var category: PreparationTask.Category?
+    @State private var notes = ""
     @State private var error: String?
     @State private var delete = false
     @State private var remind = false
@@ -411,24 +475,31 @@ private struct PreparationEditor: View {
     @State private var taskID = UUID()
     @State private var showingPlus = false
     @State private var initialized = false
+    @State private var notificationDenied = false
+    @FocusState private var focusedField: Field?
+
+    private enum Field: Hashable { case title, subject, notes, items, stage(UUID) }
 
     private var existingRule: PreparationRule? { planner.rules.first { $0.subject == draft.subject } }
     var body: some View {
         NavigationStack {
             SchoolEditorPage {
-                VStack(alignment: .leading, spacing: 16) {
-                    Label("수업과 연결하기", systemImage: "books.vertical").font(.headline)
-                    TextField("과목 (선택)", text: $draft.subject).modifier(SchoolField()).accessibilityIdentifier("preparation-subject")
-                    Toggle("수업이 있는 날마다 자동 준비", isOn: $draft.automatic)
-                        .accessibilityIdentifier("preparation-automatic")
-                    Text("자동 연결 한 과목은 계속 무료예요. 자료가 없는 날짜는 시간표 확인이 필요합니다.")
-                        .font(.footnote).foregroundStyle(.secondary)
-                }.modifier(SchoolCard())
                 if draft.automatic {
+                    VStack(alignment: .leading, spacing: 16) {
+                        Label("수업과 연결하기", systemImage: "books.vertical").font(.headline)
+                        TextField("과목 (선택)", text: $draft.subject).modifier(SchoolField()).accessibilityIdentifier("preparation-subject")
+                            .focused($focusedField, equals: .subject).submitLabel(.next)
+                            .onSubmit { focusedField = .items }
+                        Toggle("수업이 있는 날마다 자동 준비", isOn: $draft.automatic)
+                            .accessibilityIdentifier("preparation-automatic")
+                        Text("자동 연결 한 과목은 계속 무료예요. 자료가 없는 날짜는 시간표 확인이 필요합니다.")
+                            .font(.footnote).foregroundStyle(.secondary)
+                    }.modifier(SchoolCard())
                     VStack(alignment: .leading, spacing: 16) {
                         Text("무엇을 챙길까요?").font(.title3.bold())
                         TextField("체육복, 교재, 충전기", text: $draft.items, axis: .vertical)
                             .modifier(SchoolField()).accessibilityIdentifier("preparation-items")
+                            .focused($focusedField, equals: .items)
                         Text("쉼표로 나눠 입력해요.").font(.footnote).foregroundStyle(.secondary)
                         quickItems
                     }.modifier(SchoolCard())
@@ -441,14 +512,29 @@ private struct PreparationEditor: View {
                 } else {
                     VStack(alignment: .leading, spacing: 16) {
                         Text("직접 챙길 일정").font(.title3.bold())
-                        HStack {
+                        LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: dynamicTypeSize.isAccessibilitySize ? 1 : 2), spacing: 10) {
                             kindButton("준비물", value: .item)
-                            kindButton("과제·시험 마감", value: .deadline)
+                            ForEach(PreparationTask.Category.allCases, id: \.self) { value in
+                                kindButton(value.label, value: .deadline, category: value)
+                            }
+                            if draft.task?.kind == .deadline && draft.task?.category == nil {
+                                kindButton("마감", value: .deadline)
+                            }
                         }
-                        TextField("챙길 것 또는 마감 제목", text: $title).modifier(SchoolField()).accessibilityIdentifier("preparation-title")
+                        TextField("제목 (예: 영어 발표)", text: $title).modifier(SchoolField()).accessibilityIdentifier("preparation-title")
+                            .focused($focusedField, equals: .title).submitLabel(.next)
+                            .onSubmit { focusedField = .subject }
                     }.modifier(SchoolCard())
-                    SchoolDateButton(day: $draft.date, label: kind == .deadline ? "마감 날짜" : "준비 날짜", accessibilityIdentifier: "preparation-date")
-                    if kind == .deadline { deadlineStages }
+                    SchoolDateButton(day: $draft.date, label: dateLabel, accessibilityIdentifier: "preparation-date")
+                    VStack(alignment: .leading, spacing: 14) {
+                        TextField("과목 (선택)", text: $draft.subject).modifier(SchoolField()).accessibilityIdentifier("preparation-subject")
+                            .focused($focusedField, equals: .subject).submitLabel(.next)
+                            .onSubmit { focusedField = .notes }
+                        TextField("메모 (범위·제출 방법·챙길 것, 2,000자까지)", text: $notes, axis: .vertical)
+                            .lineLimit(3...8).modifier(SchoolField()).accessibilityIdentifier("preparation-notes")
+                            .focused($focusedField, equals: .notes)
+                        Text("직접 기록 · 학교가 제공한 공식 평가 일정이 아니에요.").font(.footnote).foregroundStyle(.secondary)
+                    }.modifier(SchoolCard())
                     VStack(alignment: .leading, spacing: 14) {
                         Label("필요한 때만 알림", systemImage: "bell").font(.headline)
                         Toggle("이 일정 알림 받기", isOn: $remind)
@@ -467,8 +553,24 @@ private struct PreparationEditor: View {
                             extraReminders.append(Date().addingTimeInterval(7200))
                         }.buttonStyle(SchoolSecondaryButtonStyle())
                     }
+                    if kind == .deadline {
+                        DisclosureGroup("추가 준비 기능 · Plus") { deadlineStages }
+                            .modifier(SchoolCard())
+                    }
+                    if draft.task == nil {
+                        Button("준비물을 수업에 자동 연결") { draft.automatic = true }
+                            .buttonStyle(SchoolSecondaryButtonStyle())
+                    }
                 }
                 if let error { Text(error).foregroundStyle(.red).accessibilityIdentifier("preparation-error") }
+                if notificationDenied {
+                    Button("알림 없이 저장") {
+                        remind = false
+                        extraReminders = []
+                        for index in stages.indices { stages[index].reminder = nil }
+                        Task { await save() }
+                    }.buttonStyle(SchoolSecondaryButtonStyle()).disabled(saving || planner.storageBlocked)
+                }
                 if let rule = existingRule, draft.automatic {
                     Button("자동 연결 삭제", role: .destructive) { delete = true }.frame(minHeight: 44)
                         .confirmationDialog("연결을 삭제할까요? 직접 적은 일정은 유지돼요.", isPresented: $delete, titleVisibility: .visible) {
@@ -479,19 +581,33 @@ private struct PreparationEditor: View {
                 }
                 Text("기록은 이 기기에 보관해요. 설정의 백업·iCloud 동기화로 직접 이전할 수 있으며 구입 복원은 개인 기록을 복원하지 않아요.")
                     .font(.footnote).foregroundStyle(.secondary)
-                Button(saving ? "저장 중…" : "준비 저장") { Task { await save() } }
+                Button(saving ? "저장 중…" : "일정 저장") { Task { await save() } }
                     .buttonStyle(SchoolPrimaryButtonStyle()).disabled(saving || planner.storageBlocked)
             }
-            .navigationTitle("준비 추가").navigationBarTitleDisplayMode(.inline)
+            .safeAreaInset(edge: .bottom, spacing: 0) {
+                if focusedField != nil {
+                    Button { focusedField = nil } label: {
+                        Text("입력 완료")
+                            .foregroundStyle(SchoolDesign.blue)
+                            .frame(maxWidth: .infinity, minHeight: 44, alignment: .trailing)
+                            .padding(.horizontal, 24).padding(.vertical, 8)
+                            .background(SchoolDesign.canvas)
+                            .contentShape(Rectangle())
+                    }.buttonStyle(.plain).accessibilityIdentifier("preparation-input-done")
+                }
+            }
+            .navigationTitle(draft.task == nil ? "준비 추가" : "일정 수정").navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button("취소") { dismiss() } }
+                ToolbarItem(placement: .cancellationAction) { Button("취소") { dismiss() }.disabled(saving) }
                 ToolbarItem(placement: .confirmationAction) { Button("저장") { Task { await save() } }.bold().disabled(saving || planner.storageBlocked).accessibilityIdentifier("save-preparation") }
             }
+            .interactiveDismissDisabled(saving)
             .onAppear {
                 guard !initialized else { return }; initialized = true
                 if let rule = existingRule, draft.items.isEmpty { draft.items = rule.items.joined(separator: ", ") }
                 if let task = draft.task {
                     taskID = task.id; title = task.title; kind = task.kind
+                    category = task.category; notes = task.notes ?? ""
                     remind = task.reminder != nil
                     if let date = task.reminder { reminder = date }
                     extraReminders = task.extraReminders ?? []
@@ -504,12 +620,22 @@ private struct PreparationEditor: View {
             .environment(\.timeZone, SchoolCalendar.calendar.timeZone)
         }
     }
-    private func kindButton(_ text: String, value: PreparationTask.Kind) -> some View {
-        Button { kind = value } label: {
+    private var dateLabel: String {
+        switch category {
+        case .assessment: return "평가 날짜"
+        case .exam: return "시험 날짜"
+        case .homework: return "제출 날짜"
+        case nil: return kind == .deadline ? "마감 날짜" : "준비 날짜"
+        }
+    }
+    private func kindButton(_ text: String, value: PreparationTask.Kind, category choice: PreparationTask.Category? = nil) -> some View {
+        let selected = kind == value && category == choice
+        return Button { kind = value; category = choice } label: {
             Text(text).font(.subheadline.bold()).frame(maxWidth: .infinity, minHeight: 48)
-                .foregroundStyle(kind == value ? .white : SchoolDesign.blue)
-                .background(kind == value ? SchoolDesign.blue : SchoolDesign.blue.opacity(0.08), in: RoundedRectangle(cornerRadius: 14))
-        }.buttonStyle(.plain).accessibilityAddTraits(kind == value ? [.isSelected] : [])
+                .fixedSize(horizontal: false, vertical: true)
+                .foregroundStyle(selected ? .white : SchoolDesign.blue)
+                .background(selected ? SchoolDesign.blue : SchoolDesign.blue.opacity(0.08), in: RoundedRectangle(cornerRadius: 14))
+        }.buttonStyle(.plain).accessibilityAddTraits(selected ? [.isSelected] : [])
     }
     private var deadlineStages: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -524,6 +650,7 @@ private struct PreparationEditor: View {
             ForEach($stages) { $stage in
                 VStack(alignment: .leading, spacing: 12) {
                     TextField("준비 단계", text: $stage.title).modifier(SchoolField())
+                        .focused($focusedField, equals: .stage(stage.id))
                     SchoolDateButton(day: $stage.date, label: "준비할 날짜", accessibilityIdentifier: "stage-date")
                     Toggle("이 단계 알림", isOn: Binding(get: { stage.reminder != nil }, set: { enabled in
                         stage.reminder = enabled ? Date().addingTimeInterval(3600) : nil
@@ -558,17 +685,19 @@ private struct PreparationEditor: View {
             if draft.automatic { try planner.addRule(subject: draft.subject, items: draft.items.components(separatedBy: ",")) }
             else {
                 let title = title.trimmingCharacters(in: .whitespacesAndNewlines)
-                guard !title.isEmpty else { throw SchoolError.message("챙길 것 또는 마감 제목을 입력해 주세요.") }
+                guard !title.isEmpty else { throw SchoolError.message("제목을 입력해 주세요.") }
+                guard notes.count <= 2000 else { throw SchoolError.message("메모는 2,000자까지 입력해 주세요.") }
                 let activeStages = kind == .deadline ? stages : []
                 let oldStages = planner.plan.stages.filter { $0.taskID == taskID }
                 if !planner.plusEnabled && ((!activeStages.isEmpty && activeStages != oldStages) || (remind && !extraReminders.isEmpty && extraReminders != (draft.task?.extraReminders ?? []))) { throw PlannerAccessError.plusRequired }
-                let task = PreparationTask(id: taskID, selection: planner.settings.planningKey, title: title, date: draft.date, subject: draft.subject, kind: kind, reminder: remind ? reminder : nil, extraReminders: remind ? extraReminders : [])
+                let task = PreparationTask(id: taskID, selection: planner.settings.planningKey, title: title, date: draft.date, subject: draft.subject.trimmingCharacters(in: .whitespacesAndNewlines), kind: kind, reminder: remind ? reminder : nil, extraReminders: remind ? extraReminders : [], category: kind == .deadline ? category : nil, notes: notes.isEmpty ? nil : notes)
                 let pending = PreparationPlan(tasks: [task], completed: planner.plan.completed, stages: activeStages).notices(
                     selection: planner.settings.planningKey, cache: nil, plus: planner.plusEnabled,
                     after: Date(), plusUntil: PlusStore.shared.validUntil, limit: 1)
                 if !pending.isEmpty {
                     guard try await PreparationNotifications.shared.authorize() else {
-                        throw SchoolError.message("알림이 꺼져 있어요. iPhone 설정에서 허용하거나 알림을 끄고 저장해 주세요.")
+                        notificationDenied = true
+                        throw SchoolError.message("알림이 꺼져 있어요. 입력한 내용은 그대로예요. 알림 없이 저장하거나 iPhone 설정에서 허용해 주세요.")
                     }
                 }
                 try planner.addTask(task, stages: activeStages)
