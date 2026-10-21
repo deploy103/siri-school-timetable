@@ -74,6 +74,7 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.deploy103.schooltoday.storekittesthost
         GENERATE_INFOPLIST_FILE: YES
         TARGETED_DEVICE_FAMILY: "1"
+        SWIFT_ACTIVE_COMPILATION_CONDITIONS: "$(inherited) SCHOOL_STOREKIT_DIAGNOSTICS"
   SchoolTodayStoreKitTests:
     type: bundle.unit-test
     platform: iOS
