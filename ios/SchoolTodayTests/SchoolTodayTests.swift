@@ -185,7 +185,7 @@ final class SchoolTodayTests: XCTestCase {
         let firstReminder = Date().addingTimeInterval(3600)
         let task = PreparationTask(selection: settings.planningKey, title: "과학 숙제", date: "2026-11-20", kind: .deadline,
                                    extraReminders: [firstReminder, firstReminder.addingTimeInterval(3600)], category: .homework)
-        let retained = PreparationStage(taskID: task.id, title: "초안", date: "2026-11-17")
+        var retained = PreparationStage(taskID: task.id, title: "초안", date: "2026-11-17", reminder: firstReminder)
         let removed = PreparationStage(taskID: task.id, title: "제출 확인", date: "2026-11-19")
         store.updateAccess(true)
         try store.addTask(task, stages: [retained, removed])
@@ -195,13 +195,21 @@ final class SchoolTodayTests: XCTestCase {
         earlier.date = "2026-11-18"
         earlier.extraReminders = [firstReminder]
         try store.addTask(earlier, stages: [retained])
+        var rescheduled = retained
+        rescheduled.reminder = firstReminder.addingTimeInterval(1800)
+        XCTAssertThrowsError(try store.addTask(earlier, stages: [rescheduled])) { XCTAssertTrue($0 is PlannerAccessError) }
+        retained.reminder = nil
+        try store.addTask(earlier, stages: [retained])
         let saved = try PlannerArchive(directory: directory).load()
         XCTAssertEqual(saved.tasks, [earlier])
-        XCTAssertEqual(saved.stages, [retained], "Removing one invalidated stage must not require deleting every stage")
+        XCTAssertEqual(saved.stages, [retained], "Removing an invalid stage or switching off its retained reminder must not require renewal")
 
         var added = earlier
         added.extraReminders?.append(firstReminder.addingTimeInterval(7200))
         XCTAssertThrowsError(try store.addTask(added, stages: [retained])) { XCTAssertTrue($0 is PlannerAccessError) }
+        var reenabled = retained
+        reenabled.reminder = firstReminder
+        XCTAssertThrowsError(try store.addTask(earlier, stages: [reenabled])) { XCTAssertTrue($0 is PlannerAccessError) }
         var changed = retained
         changed.date = "2026-11-16"
         XCTAssertThrowsError(try store.addTask(earlier, stages: [changed])) { XCTAssertTrue($0 is PlannerAccessError) }
