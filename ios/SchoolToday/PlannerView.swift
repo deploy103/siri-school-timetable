@@ -688,9 +688,8 @@ private struct PreparationEditor: View {
                 guard !title.isEmpty else { throw SchoolError.message("제목을 입력해 주세요.") }
                 guard notes.count <= 2000 else { throw SchoolError.message("메모는 2,000자까지 입력해 주세요.") }
                 let activeStages = kind == .deadline ? stages : []
-                let oldStages = planner.plan.stages.filter { $0.taskID == taskID }
-                if !planner.plusEnabled && ((!activeStages.isEmpty && activeStages != oldStages) || (remind && !extraReminders.isEmpty && extraReminders != (draft.task?.extraReminders ?? []))) { throw PlannerAccessError.plusRequired }
                 let task = PreparationTask(id: taskID, selection: planner.settings.planningKey, title: title, date: draft.date, subject: draft.subject.trimmingCharacters(in: .whitespacesAndNewlines), kind: kind, reminder: remind ? reminder : nil, extraReminders: remind ? extraReminders : [], category: kind == .deadline ? category : nil, notes: notes.isEmpty ? nil : notes)
+                try planner.checkTaskAccess(task, stages: activeStages)
                 let pending = PreparationPlan(tasks: [task], completed: planner.plan.completed, stages: activeStages).notices(
                     selection: planner.settings.planningKey, cache: nil, plus: planner.plusEnabled,
                     after: Date(), plusUntil: PlusStore.shared.validUntil, limit: 1)

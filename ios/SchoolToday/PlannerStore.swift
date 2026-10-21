@@ -209,16 +209,22 @@ final class PlannerStore: ObservableObject {
         value.rules.removeAll { $0.id == rule.id }
         try commit(value)
     }
+    func checkTaskAccess(_ task: PreparationTask, stages: [PreparationStage]) throws {
+        guard !plusEnabled else { return }
+        let previous = tasks.first { $0.id == task.id }
+        let previousStages = plan.stages.filter { $0.taskID == task.id }
+        // Expiration permits retaining or removing saved features, never adding new ones.
+        guard (task.extraReminders ?? []).allSatisfy({ (previous?.extraReminders ?? []).contains($0) }),
+              stages.allSatisfy({ previousStages.contains($0) }) else { throw PlannerAccessError.plusRequired }
+    }
     func addTask(_ task: PreparationTask, stages: [PreparationStage] = []) throws {
         guard task.selection == settings.planningKey, SchoolCalendar.date(task.date) != nil,
               !task.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             throw SchoolError.message("제목과 날짜를 확인해 주세요.")
         }
+        try checkTaskAccess(task, stages: stages)
         let previous = tasks.first { $0.id == task.id }
         let previousStages = plan.stages.filter { $0.taskID == task.id }
-        if !plusEnabled,
-           (!(task.extraReminders ?? []).isEmpty && task.extraReminders != previous?.extraReminders)
-            || (!stages.isEmpty && stages != previousStages) { throw PlannerAccessError.plusRequired }
         let reminders = [task.reminder].compactMap { $0 } + (task.extraReminders ?? []) + stages.compactMap(\.reminder)
         let previousReminders = [previous?.reminder].compactMap { $0 } + (previous?.extraReminders ?? []) + previousStages.compactMap(\.reminder)
         guard reminders.allSatisfy({ $0 > Date() || previousReminders.contains($0) }) else { throw SchoolError.message("알림은 앞으로의 시각을 선택해 주세요.") }
