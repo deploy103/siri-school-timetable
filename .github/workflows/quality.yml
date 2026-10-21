@@ -54,6 +54,15 @@ jobs:
           xcodebuild -project ios/SchoolToday.xcodeproj -scheme SchoolToday \
             -configuration Release -destination 'generic/platform=iOS' \
             -derivedDataPath "$RUNNER_TEMP/ios-device" CODE_SIGNING_ALLOWED=NO build
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: native-shortcut-metadata
+          path: |
+            ${{ runner.temp }}/ios-device/Build/Products/Release-iphoneos/SchoolToday.app/Metadata.appintents
+            ${{ runner.temp }}/ios-device/Build/Products/Release-iphoneos/SchoolToday.app/ko.lproj/nlu.appintents
+            ${{ runner.temp }}/ios-device/Build/Intermediates.noindex/SchoolToday.build/Release-iphoneos/SchoolToday.build/SchoolToday.DependencyMetadataFileList
+          retention-days: 7
       - name: Native unit and UI tests
         run: |
           device_id=$(xcrun simctl list devices available -j | python3 -c 'import json, sys; print(next(device["udid"] for devices in json.load(sys.stdin)["devices"].values() for device in devices if device["name"].startswith("iPhone")))')
