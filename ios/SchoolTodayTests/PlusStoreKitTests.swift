@@ -37,10 +37,10 @@ final class PlusStoreKitTests: XCTestCase {
         let transaction = try await session.buyProduct(identifier: yearlyID)
         PlusStore.diagnostic("yearly control external returned \(PlusStore.diagnosticTransaction(transaction))")
         // No entitlement reads or manual refresh between purchase and the passive assertion.
-        try await waitForAccess(true, store: store)
+        try await waitForYearlyControlAccess(true, store: store)
         try await assertVerifiedAccess(productID: yearlyID)
         try session.refundTransaction(identifier: UInt(transaction.id))
-        try await waitForAccess(false, store: store)
+        try await waitForYearlyControlAccess(false, store: store)
     }
 
     @MainActor
@@ -136,6 +136,38 @@ final class PlusStoreKitTests: XCTestCase {
         try await assertVerifiedAccess(productID: yearlyID)
         try session.refundTransaction(identifier: UInt(external.id))
         try await waitForAccess(false, store: store)
+    }
+
+    @MainActor
+    private func waitForYearlyControlAccess(_ expected: Bool, store: PlusStore,
+                                             file: StaticString = #filePath, line: UInt = #line) async throws {
+        let clock = ContinuousClock()
+        let deadline = clock.now.advanced(by: .seconds(10))
+        PlusStore.diagnostic("yearly control passive wait begin expected=\(expected) access=\(store.isPlus)")
+        while store.isPlus != expected && clock.now < deadline {
+            try await Task.sleep(for: .milliseconds(50))
+        }
+        guard store.isPlus == expected else {
+            XCTFail("Passive transaction listener missed access change to \(expected)", file: file, line: line)
+            // Outcome is final. Observe only app state; Apple reads could influence delivery.
+            let began = clock.now
+            let observationDeadline = began.advanced(by: .seconds(120))
+            var previous = store.isPlus
+            PlusStore.diagnostic("yearly control observation begin; outcome already FAILED; budget=120s access=\(previous)")
+            defer {
+                PlusStore.diagnostic("yearly control observation end elapsed=\(began.duration(to: clock.now)) access=\(store.isPlus); outcome remains FAILED")
+            }
+            while clock.now < observationDeadline {
+                try await Task.sleep(for: .milliseconds(50))
+                let current = store.isPlus
+                if current != previous {
+                    PlusStore.diagnostic("yearly control observed transition elapsed=\(began.duration(to: clock.now)) access=\(current); outcome remains FAILED")
+                    previous = current
+                }
+            }
+            throw Timeout.access
+        }
+        PlusStore.diagnostic("yearly control passive wait passed expected=\(expected) access=\(store.isPlus)")
     }
 
     @MainActor
