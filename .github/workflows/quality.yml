@@ -56,6 +56,7 @@ jobs:
           echo "$RUNNER_TEMP/xcodegen-tool/xcodegen/bin" >> "$GITHUB_PATH"
       - run: xcodegen generate --spec ios/project.yml --project ios
       - name: Unsigned iPhone Release build
+        id: release_build
         run: |
           xcodebuild -project ios/SchoolToday.xcodeproj -scheme SchoolToday \
             -configuration Release -destination 'generic/platform=iOS' \
@@ -70,6 +71,8 @@ jobs:
             ${{ runner.temp }}/ios-device/Build/Intermediates.noindex/SchoolToday.build/Release-iphoneos/SchoolToday.build/SchoolToday.DependencyMetadataFileList
           retention-days: 7
       - name: Real-time external yearly delivery control
+        id: yearly_control
+        if: ${{ !cancelled() && steps.release_build.outcome == 'success' }}
         timeout-minutes: 20
         run: |
           device_id=$(xcrun simctl list devices available -j | python3 -c 'import json, sys; print(next(device["udid"] for devices in json.load(sys.stdin)["devices"].values() for device in devices if device["name"].startswith("iPhone")))')
@@ -80,6 +83,7 @@ jobs:
             -only-testing:SchoolTodayStoreKitTests/PlusStoreKitTests/testExternalYearlyDeliveryInRealTime \
             -resultBundlePath "$RUNNER_TEMP/YearlyDelivery.xcresult" CODE_SIGNING_ALLOWED=NO test
       - name: Local StoreKit subscription lifecycle
+        if: ${{ !cancelled() && steps.yearly_control.outcome == 'success' }}
         timeout-minutes: 20
         run: |
           device_id=$(xcrun simctl list devices available -j | python3 -c 'import json, sys; print(next(device["udid"] for devices in json.load(sys.stdin)["devices"].values() for device in devices if device["name"].startswith("iPhone")))')
