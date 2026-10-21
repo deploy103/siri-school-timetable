@@ -3,10 +3,46 @@ import StoreKit
 import StoreKitTest
 @testable import StoreKitTestHost
 
-/// One ordered contract: run without parallel testing (the StoreKit session and store are shared).
+/// Run each ordered contract alone without parallel testing (session and store are shared).
 /// The empty host does not construct PlusStore; configure the local session before its first use.
 /// This covers the real store implementation, not SchoolTodayApp's launch lifecycle.
 final class PlusStoreKitTests: XCTestCase {
+    /// Run alone in a fresh host: distinguish passive delivery from accelerated-clock handoff.
+    @MainActor
+    func testExternalYearlyDeliveryInRealTime() async throws {
+        let url = try XCTUnwrap(Bundle(for: Self.self).url(forResource: "Plus", withExtension: "storekit"))
+        let session = try SKTestSession(contentsOf: url)
+        session.resetToDefaultState()
+        session.clearTransactions()
+        session.disableDialogs = true
+        session.storefront = "USA"
+        session.locale = Locale(identifier: "en_US")
+        session.timeRate = .realTime
+        PlusStore.diagnostic("yearly control configured rate=\(session.timeRate)")
+        let store = PlusStore.shared
+        addTeardownBlock {
+            await PlusStore.diagnostic("yearly control teardown begin")
+            session.clearTransactions()
+            session.resetToDefaultState()
+            await store.refresh()
+            await PlusStore.diagnostic("yearly control teardown end")
+        }
+
+        await store.load()
+        XCTAssertFalse(store.isPlus)
+        guard !store.isPlus else { throw Timeout.access }
+        let yearlyID = "com.deploy103.schooltoday.plus.yearly"
+        _ = try XCTUnwrap(store.products.first { $0.id == yearlyID })
+        PlusStore.diagnostic("yearly control external purchase begin")
+        let transaction = try await session.buyProduct(identifier: yearlyID)
+        PlusStore.diagnostic("yearly control external returned \(PlusStore.diagnosticTransaction(transaction))")
+        // No entitlement reads or manual refresh between purchase and the passive assertion.
+        try await waitForAccess(true, store: store)
+        try await assertVerifiedAccess(productID: yearlyID)
+        try session.refundTransaction(identifier: UInt(transaction.id))
+        try await waitForAccess(false, store: store)
+    }
+
     @MainActor
     func testLocalSubscriptionLifecycle() async throws {
         let url = try XCTUnwrap(Bundle(for: Self.self).url(forResource: "Plus", withExtension: "storekit"))
@@ -16,9 +52,7 @@ final class PlusStoreKitTests: XCTestCase {
         session.disableDialogs = true
         session.storefront = "USA"
         session.locale = Locale(identifier: "en_US")
-        // Diagnostic control: establish live access before accelerating the lapse phase.
-        // Whether changing the rate accelerates an existing period is measured below, not assumed.
-        session.timeRate = .realTime
+        session.timeRate = .oneRenewalEveryTenSeconds
         PlusStore.diagnostic("test configured rate=\(session.timeRate)")
         let store = PlusStore.shared
         addTeardownBlock {
@@ -76,9 +110,6 @@ final class PlusStoreKitTests: XCTestCase {
         PlusStore.diagnostic("test disable renewal begin id=\(purchased.id)")
         try session.disableAutoRenewForTransaction(identifier: UInt(purchased.id))
         PlusStore.diagnostic("test disable renewal end id=\(purchased.id)")
-        PlusStore.diagnostic("test lapse rate change begin rate=\(session.timeRate)")
-        session.timeRate = .oneRenewalEveryTenSeconds
-        PlusStore.diagnostic("test lapse rate change end rate=\(session.timeRate)")
         // Wait for Apple's independent lapse, then test our refresh against it.
         try await waitForNoEntitlements()
         PlusStore.diagnostic("test natural lapse confirmed; explicit refresh begin")
