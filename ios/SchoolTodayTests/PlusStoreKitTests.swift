@@ -7,6 +7,97 @@ import StoreKitTest
 /// The empty host does not construct PlusStore; configure the local session before its first use.
 /// This covers the real store implementation, not SchoolTodayApp's launch lifecycle.
 final class PlusStoreKitTests: XCTestCase {
+    /// Diagnostic reference only: run alone on a fresh runner without constructing the app store.
+    @MainActor
+    func testRawStoreKitExternalYearlyDelivery() async throws {
+        func log(_ event: String) {
+            print("SKRAW wall=\(Date().timeIntervalSince1970) uptime=\(ProcessInfo.processInfo.systemUptime) \(event)")
+        }
+        func details(_ transaction: Transaction) -> String {
+            "id=\(transaction.id) product=\(transaction.productID) environment=\(transaction.environment) purchased=\(transaction.purchaseDate.timeIntervalSince1970) expires=\(String(describing: transaction.expirationDate?.timeIntervalSince1970)) revoked=\(String(describing: transaction.revocationDate?.timeIntervalSince1970)) upgraded=\(transaction.isUpgraded)"
+        }
+        let url = try XCTUnwrap(Bundle(for: Self.self).url(forResource: "Plus", withExtension: "storekit"))
+        let session = try SKTestSession(contentsOf: url)
+        session.resetToDefaultState()
+        session.clearTransactions()
+        session.disableDialogs = true
+        session.storefront = "USA"
+        session.locale = Locale(identifier: "en_US")
+        session.timeRate = .realTime
+        log("configured rate=\(session.timeRate)")
+
+        let clock = ContinuousClock()
+        var aboutToAwaitNext = false
+        var listenerExited = false
+        var received: [(at: ContinuousClock.Instant, result: VerificationResult<Transaction>)] = []
+        let listener = Task { @MainActor in
+            defer { listenerExited = true; log("listener exited cancelled=\(Task.isCancelled)") }
+            var iterator = Transaction.updates.makeAsyncIterator()
+            log("about to await first next; SDK registration is UNCONFIRMED")
+            aboutToAwaitNext = true
+            while let result = await iterator.next() {
+                received.append((clock.now, result))
+                switch result {
+                case .verified(let transaction): log("received verified \(details(transaction))")
+                case .unverified(let transaction, let error): log("received unverified \(details(transaction)) error=\(error)")
+                }
+                guard !Task.isCancelled else { return }
+            }
+        }
+        addTeardownBlock { @MainActor in
+            log("teardown begin")
+            listener.cancel()
+            session.clearTransactions()
+            session.resetToDefaultState()
+            log("session cleared; awaiting listener exit; exited=\(listenerExited)")
+            await listener.value
+            log("teardown end")
+        }
+
+        let startDeadline = clock.now.advanced(by: .seconds(10))
+        while !aboutToAwaitNext && clock.now < startDeadline {
+            try await Task.sleep(for: .milliseconds(50))
+        }
+        guard aboutToAwaitNext, !listenerExited, clock.now < startDeadline else {
+            XCTFail("Raw listener did not reach its first next(); no delivery control established")
+            throw Timeout.access
+        }
+        let yearlyID = "com.deploy103.schooltoday.plus.yearly"
+        log("external purchase begin; local listener milestone only, SDK registration UNCONFIRMED")
+        let transaction = try await session.buyProduct(identifier: yearlyID)
+        log("external returned \(details(transaction)); buffered=\(received.count)")
+        guard transaction.productID == yearlyID, transaction.environment == .xcode,
+              transaction.revocationDate == nil, !transaction.isUpgraded,
+              transaction.expirationDate.map({ $0 > Date() }) == true else {
+            XCTFail("Raw purchase did not return a live local yearly transaction")
+            throw Timeout.entitlements
+        }
+
+        let deadline = clock.now.advanced(by: .seconds(10))
+        func delivered() -> Bool {
+            received.contains { event in
+                guard event.at < deadline, case .verified(let value) = event.result else { return false }
+                return value.id == transaction.id && value.productID == yearlyID && value.environment == .xcode
+            }
+        }
+        log("passive wait begin; matching verified delivery required; budget=10s")
+        while !delivered() && clock.now < deadline {
+            try await Task.sleep(for: .milliseconds(50))
+        }
+        guard delivered(), clock.now < deadline else {
+            XCTFail("Raw StoreKit missed matching verified yearly delivery; events=\(received.count) listenerExited=\(listenerExited)")
+            let began = clock.now
+            let observationDeadline = began.advanced(by: .seconds(120))
+            log("observation begin; outcome already FAILED; budget=120s events=\(received.count)")
+            while clock.now < observationDeadline {
+                try await Task.sleep(for: .milliseconds(50))
+            }
+            log("observation end elapsed=\(began.duration(to: clock.now)) events=\(received.count) listenerExited=\(listenerExited); outcome remains FAILED")
+            throw Timeout.access
+        }
+        log("passive matching verified delivery passed; events=\(received.count)")
+    }
+
     /// Run alone in a fresh host: distinguish passive delivery from accelerated-clock handoff.
     @MainActor
     func testExternalYearlyDeliveryInRealTime() async throws {
