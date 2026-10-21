@@ -29,6 +29,21 @@ final class PlusStoreKitTests: XCTestCase {
         }
 
         await store.load()
+        // Wait only on diagnostic state: no additional StoreKit enumeration or refresh.
+        let readinessClock = ContinuousClock()
+        let began = readinessClock.now
+        let readinessDeadline = began.advanced(by: .seconds(120))
+        PlusStore.diagnostic("yearly control readiness begin startupFinished=\(store.diagnosticStartupRefreshFinished) inFlight=\(store.diagnosticRefreshesInFlight)")
+        while (!store.diagnosticStartupRefreshFinished || store.diagnosticRefreshesInFlight > 0)
+                && readinessClock.now < readinessDeadline {
+            try await Task.sleep(for: .milliseconds(50))
+        }
+        PlusStore.diagnostic("yearly control readiness end elapsed=\(began.duration(to: readinessClock.now)) startupFinished=\(store.diagnosticStartupRefreshFinished) inFlight=\(store.diagnosticRefreshesInFlight)")
+        guard readinessClock.now < readinessDeadline,
+              store.diagnosticStartupRefreshFinished, store.diagnosticRefreshesInFlight == 0 else {
+            XCTFail("Initial refreshes did not settle before the yearly control")
+            throw Timeout.access
+        }
         XCTAssertFalse(store.isPlus)
         guard !store.isPlus else { throw Timeout.access }
         let yearlyID = "com.deploy103.schooltoday.plus.yearly"
