@@ -135,7 +135,7 @@ describe("HomePage", () => {
     expect(screen.queryByRole("heading", { name: "처음 쓰는 경우 여기부터 따라하면 됨" })).not.toBeInTheDocument();
   });
 
-  it("opens the Siri dialog automatically right after the very first setup save", async () => {
+  it("shows the first timetable without a dialog and opens Siri only on request", async () => {
     window.localStorage.clear();
     const user = userEvent.setup();
     const school = { ...settings.school, name: "새학교" };
@@ -156,7 +156,18 @@ describe("HomePage", () => {
     await user.selectOptions(screen.getByLabelText("반"), "4");
     await user.click(screen.getByRole("button", { name: "설정 저장하고 시간표 보기" }));
 
-    expect(await screen.findByRole("dialog", { name: "Siri로 학교 정보 듣기" })).toBeVisible();
+    expect(await screen.findByRole("heading", { name: "오늘 수업" })).toBeVisible();
+    expect(await screen.findByText("수학")).toBeVisible();
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Siri 설정" }));
+    expect(screen.getByRole("dialog", { name: "Siri로 학교 정보 듣기" })).toBeVisible();
+    expect(screen.getByLabelText("내 시간표 주소")).toHaveValue(
+      `${window.location.origin}/api/voice/timetable?officeCode=B10&schoolCode=7011234&kind=%EC%A4%91%ED%95%99%EA%B5%90&grade=3&className=4`,
+    );
+    expect(screen.getByLabelText("내 급식 주소")).toHaveValue(
+      `${window.location.origin}/api/voice/meal?officeCode=B10&schoolCode=7011234`,
+    );
   });
 
   it("lets the student reopen the onboarding guide from the timetable header", async () => {

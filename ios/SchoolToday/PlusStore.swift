@@ -21,17 +21,51 @@ final class PlusStore: ObservableObject {
     private var updates: Task<Void, Never>?
     private var refreshGeneration = 0
 
+    #if SCHOOL_STOREKIT_DIAGNOSTICS
+    // Enabled only in the disposable StoreKit host, never the app or widget.
+    private(set) var diagnosticStartupRefreshFinished = false
+    private(set) var diagnosticRefreshesInFlight = 0
+
+    static func diagnostic(_ event: String) {
+        print("SKDIAG wall=\(Date().timeIntervalSince1970) uptime=\(ProcessInfo.processInfo.systemUptime) \(event)")
+    }
+
+    static func diagnosticTransaction(_ transaction: Transaction) -> String {
+        "id=\(transaction.id) original=\(transaction.originalID) product=\(transaction.productID) environment=\(transaction.environment) purchased=\(transaction.purchaseDate.timeIntervalSince1970) expires=\(String(describing: transaction.expirationDate?.timeIntervalSince1970)) revoked=\(String(describing: transaction.revocationDate?.timeIntervalSince1970)) upgraded=\(transaction.isUpgraded)"
+    }
+    #endif
+
     private init() {
         updates = Task { [weak self] in
+            #if SCHOOL_STOREKIT_DIAGNOSTICS
+            Self.diagnostic("listener started")
+            defer { Self.diagnostic("listener exited") }
+            #endif
             for await result in Transaction.updates {
+                #if SCHOOL_STOREKIT_DIAGNOSTICS
+                Self.diagnostic("listener yielded")
+                #endif
                 guard !Task.isCancelled else { return }
                 guard let self else { return }
                 switch result {
                 case .verified(let transaction):
+                    #if SCHOOL_STOREKIT_DIAGNOSTICS
+                    Self.diagnostic("listener verified \(Self.diagnosticTransaction(transaction))")
+                    #endif
                     guard Self.productIDs.contains(transaction.productID),
                           transaction.productType == .autoRenewable else { continue }
+                    #if SCHOOL_STOREKIT_DIAGNOSTICS
+                    Self.diagnostic("listener refresh begin id=\(transaction.id)")
+                    #endif
                     await self.refresh()
+                    #if SCHOOL_STOREKIT_DIAGNOSTICS
+                    Self.diagnostic("listener refresh end id=\(transaction.id) access=\(self.isPlus)")
+                    Self.diagnostic("listener finish begin id=\(transaction.id)")
+                    #endif
                     await transaction.finish()
+                    #if SCHOOL_STOREKIT_DIAGNOSTICS
+                    Self.diagnostic("listener finish end id=\(transaction.id)")
+                    #endif
                 case .unverified(let transaction, _):
                     if Self.productIDs.contains(transaction.productID) {
                         self.message = "구독을 안전하게 확인하지 못했어요. 잠시 후 다시 확인해 주세요."
@@ -40,7 +74,14 @@ final class PlusStore: ObservableObject {
             }
         }
         Task { [weak self] in
+            #if SCHOOL_STOREKIT_DIAGNOSTICS
+            Self.diagnostic("startup refresh begin")
+            #endif
             await self?.refresh()
+            #if SCHOOL_STOREKIT_DIAGNOSTICS
+            self?.diagnosticStartupRefreshFinished = true
+            Self.diagnostic("startup refresh end")
+            #endif
         }
     }
 
@@ -71,13 +112,29 @@ final class PlusStore: ObservableObject {
     func refresh() async {
         refreshGeneration += 1
         let generation = refreshGeneration
+        #if SCHOOL_STOREKIT_DIAGNOSTICS
+        diagnosticRefreshesInFlight += 1
+        defer { diagnosticRefreshesInFlight -= 1 }
+        Self.diagnostic("refresh begin generation=\(generation)")
+        var yielded = 0
+        #endif
         var entitled = false
         var until: Date?
         for await result in Transaction.currentEntitlements {
+            #if SCHOOL_STOREKIT_DIAGNOSTICS
+            yielded += 1
+            Self.diagnostic("refresh yielded generation=\(generation)")
+            if case .verified(let transaction) = result {
+                Self.diagnostic("refresh verified generation=\(generation) \(Self.diagnosticTransaction(transaction))")
+            }
+            #endif
             guard case .verified(let transaction) = result,
                   Self.productIDs.contains(transaction.productID),
                   transaction.productType == .autoRenewable,
                   transaction.revocationDate == nil, !transaction.isUpgraded else { continue }
+            #if SCHOOL_STOREKIT_DIAGNOSTICS
+            Self.diagnostic("refresh accepted generation=\(generation) id=\(transaction.id)")
+            #endif
             // currentEntitlements includes billing grace periods and excludes expired subscriptions.
             entitled = true
             // Bound work handed to the OS even if the app is never opened after expiration.
@@ -86,6 +143,9 @@ final class PlusStore: ObservableObject {
             until = max(until ?? end, end)
         }
         if generation == refreshGeneration { validUntil = until; isPlus = entitled }
+        #if SCHOOL_STOREKIT_DIAGNOSTICS
+        Self.diagnostic("refresh end generation=\(generation) current=\(refreshGeneration) yielded=\(yielded) entitled=\(entitled) committed=\(generation == refreshGeneration) access=\(isPlus) until=\(String(describing: validUntil?.timeIntervalSince1970))")
+        #endif
     }
 
     func purchase(_ product: Product) async {
@@ -103,6 +163,9 @@ final class PlusStore: ObservableObject {
                     message = "결제를 확인하지 못했어요. 구입 복원을 시도해 주세요."
                     return
                 }
+                #if SCHOOL_STOREKIT_DIAGNOSTICS
+                Self.diagnostic("purchase verified before refresh \(Self.diagnosticTransaction(transaction))")
+                #endif
                 await refresh()
                 await transaction.finish()
                 message = isPlus ? "Plus가 활성화되었어요." : "결제는 확인했지만 활성 구독이 없어요. 구입 복원을 시도해 주세요."

@@ -12,7 +12,13 @@ export function timetableToSpeech(timetable: TimetableResponse): string {
     .sort((left, right) => left.period - right.period)
     .map((lesson) => `${lesson.period}교시 ${lesson.ambiguous ? "선택 수업" : lesson.subject.trim()}`)
     .join(", ");
-  return `오늘 시간표는 ${lessons}입니다.`;
+  const periods = new Set(timetable.lessons.map((lesson) => lesson.period));
+  const missing = Array.from({ length: Math.max(...periods) }, (_, index) => index + 1)
+    .filter((period) => !periods.has(period));
+  const notice = missing.length > 0
+    ? ` ${missing.join(", ")}교시 자료가 없습니다. 수업 여부는 학교에 확인해 주세요.`
+    : "";
+  return `오늘 시간표는 ${lessons}입니다.${notice}`;
 }
 
 export function stripAllergenNotation(dish: string): string {
@@ -45,7 +51,7 @@ export function mealToSpeech(mealResponse: MealResponse): string {
 
 export function voiceErrorMessage(errorCode: string): string {
   if (errorCode === "INVALID_INPUT" || errorCode === "NOT_FOUND") {
-    return "학교 설정이 올바르지 않습니다. 웹사이트에서 학교와 학년, 반 설정을 다시 확인해 주세요.";
+    return "학교 설정이 올바르지 않습니다. 오늘의 학교에서 학교와 학년, 반 설정을 다시 확인해 주세요.";
   }
   if (errorCode === "RATE_LIMITED") {
     return "요청이 너무 많습니다. 잠시 후 다시 물어봐 주세요.";
@@ -55,7 +61,7 @@ export function voiceErrorMessage(errorCode: string): string {
 
 export function mealVoiceErrorMessage(errorCode: string): string {
   if (errorCode === "INVALID_INPUT" || errorCode === "NOT_FOUND") {
-    return "학교 설정이 올바르지 않습니다. 웹사이트에서 학교 설정을 다시 확인해 주세요.";
+    return "학교 설정이 올바르지 않습니다. 오늘의 학교에서 학교 설정을 다시 확인해 주세요.";
   }
   if (errorCode === "RATE_LIMITED") {
     return "요청이 너무 많습니다. 잠시 후 다시 물어봐 주세요.";

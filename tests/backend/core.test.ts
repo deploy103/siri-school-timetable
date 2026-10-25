@@ -4,7 +4,7 @@ import { MemoryCache } from "@/lib/cache";
 import { EDUCATION_OFFICES, isEducationOfficeCode } from "@/lib/education-offices";
 import { clientIdentifier, MemoryRateLimiter } from "@/lib/rate-limit";
 import { schoolSearchSchema, timetableQuerySchema } from "@/lib/schemas";
-import { timetableToSpeech, voiceErrorMessage } from "@/lib/voice";
+import { mealVoiceErrorMessage, timetableToSpeech, voiceErrorMessage } from "@/lib/voice";
 
 describe("KST dates", () => {
   it("uses the Korean calendar day across a UTC boundary", () => {
@@ -122,11 +122,14 @@ describe("speech generation", () => {
         ...base,
         lessons: [{ period: 3, subject: "음악 또는 체육", ambiguous: true }],
       }),
-    ).toBe("오늘 시간표는 3교시 선택 수업입니다.");
+    ).toBe("오늘 시간표는 3교시 선택 수업입니다. 1, 2교시 자료가 없습니다. 수업 여부는 학교에 확인해 주세요.");
   });
 
-  it("guides Siri users back to settings when a school no longer exists", () => {
-    expect(voiceErrorMessage("NOT_FOUND")).toContain("학교 설정이 올바르지 않습니다");
+  it("guides Siri users back to settings without assuming they use the website", () => {
+    for (const code of ["INVALID_INPUT", "NOT_FOUND"]) {
+      expect(voiceErrorMessage(code)).toBe("학교 설정이 올바르지 않습니다. 오늘의 학교에서 학교와 학년, 반 설정을 다시 확인해 주세요.");
+      expect(mealVoiceErrorMessage(code)).toBe("학교 설정이 올바르지 않습니다. 오늘의 학교에서 학교 설정을 다시 확인해 주세요.");
+    }
   });
 });
 
