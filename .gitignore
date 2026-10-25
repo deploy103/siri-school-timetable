@@ -22,3 +22,7 @@
 /ios/build
 /ios/build-device
 /ios/*.xcresult
+
+# Private product planning and meeting notes
+/docs/PRODUCT_V1.md
+/docs/meetings/2026-10-21-student-v1.md
